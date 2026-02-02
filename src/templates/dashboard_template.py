@@ -11,8 +11,6 @@ from zoneinfo import ZoneInfo
 
 # imports for the __init_subclass__ method, do not remove pls
 from firewall import fwtype
-from firewall.iptables import Iptables
-from firewall.raw import Raw
 
 
 def _escape(value) -> str:
@@ -141,6 +139,68 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
         }}
         .download-btn:active {{
             background: #1f7a2f;
+        }}
+        .banlist-dropdown {{
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }}
+        .banlist-dropdown-btn {{
+            display: block;
+            width: 100%;
+            padding: 8px 14px;
+            background: #238636;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 13px;
+            transition: background 0.2s;
+            border: 1px solid #2ea043;
+            cursor: pointer;
+            text-align: left;
+            box-sizing: border-box;
+        }}
+        .banlist-dropdown-btn:hover {{
+            background: #2ea043;
+        }}
+        .banlist-dropdown-menu {{
+            display: none;
+            position: absolute;
+            right: 0;
+            left: 0;
+            background-color: #161b22;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.3);
+            z-index: 1;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            margin-top: 4px;
+            overflow: hidden;
+        }}
+        .banlist-dropdown-menu.show {{
+            display: block;
+        }}
+        .banlist-dropdown-menu a {{
+            color: #c9d1d9;
+            padding: 6px 12px;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+            font-size: 12px;
+        }}
+        .banlist-dropdown-menu a:hover {{
+            background-color: #1c2128;
+            color: #58a6ff;
+        }}
+        .banlist-dropdown-menu a.disabled {{
+            color: #6e7681;
+            cursor: not-allowed;
+            pointer-events: none;
+        }}
+        .banlist-icon {{
+            font-size: 14px;
         }}
         .stats-grid {{
             display: grid;
@@ -658,13 +718,19 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
             </svg>
             <span class="github-logo-text">BlessedRebuS/Krawl</span>
         </a>
-        <form class="download-section" action="{dashboard_path}/api/get_banlist" method="GET" >
-            <select class="download-btn" name="fwtype" id="fwtype">
-                <option value="raw">raw</option>
-                <option value="iptables">iptables</option>
-            </select>
-            <input type="submit" class="download-btn" value="Export IPs Banlist">
-        </form>
+        <div class="download-section">
+            <div class="banlist-dropdown">
+                <button class="banlist-dropdown-btn" onclick="toggleBanlistDropdown()">Export IPs Banlist</button>
+                <div id="banlistDropdown" class="banlist-dropdown-menu">
+                    <a href="javascript:void(0)" onclick="downloadBanlist('raw')">
+                        <span>Raw IPs</span>
+                    </a>
+                    <a href="javascript:void(0)" onclick="downloadBanlist('iptables')">
+                        <span>IPTables Rules</span>
+                    </a>
+                </div>
+            </div>
+        </div>
         <h1>Krawl Dashboard</h1>
 
         <div class="stats-grid">
@@ -951,6 +1017,43 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
     </div>
     <script>
         const DASHBOARD_PATH = '{dashboard_path}';
+
+        // Dropdown menu functions
+        function toggleBanlistDropdown() {{
+            const dropdown = document.getElementById('banlistDropdown');
+            dropdown.classList.toggle('show');
+        }}
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {{
+            const dropdown = document.querySelector('.banlist-dropdown');
+            if (!dropdown.contains(event.target)) {{
+                const menu = document.getElementById('banlistDropdown');
+                menu.classList.remove('show');
+            }}
+        }});
+
+        // Download banlist function
+        function downloadBanlist(fwtype) {{
+            const url = DASHBOARD_PATH + '/api/get_banlist?fwtype=' + encodeURIComponent(fwtype);
+            
+            // Create a temporary link and trigger download
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Set filename based on type
+            const filename = fwtype === 'raw' ? 'banlist_raw.txt' : 'banlist_iptables.sh';
+            link.setAttribute('download', filename);
+            
+            // Append to body, click, and remove
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Close dropdown after download
+            const menu = document.getElementById('banlistDropdown');
+            menu.classList.remove('show');
+        }}
 
         function formatTimestamp(isoTimestamp) {{
             if (!isoTimestamp) return 'N/A';
