@@ -37,6 +37,8 @@ class Config:
     infinite_pages_for_malicious: bool = True  # Infinite pages for malicious crawlers
     ban_duration_seconds: int = 600  # Ban duration in seconds for IPs exceeding limits
 
+    # exporter settings
+    exports_path: str = "exports"
     # Database settings
     database_path: str = "data/krawl.db"
     database_retention_days: int = 30

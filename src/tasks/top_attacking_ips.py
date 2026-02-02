@@ -11,6 +11,7 @@ from firewall.fwtype import FWType
 from firewall.iptables import Iptables
 from firewall.raw import Raw
 
+config = get_config()
 app_logger = get_app_logger()
 
 # ----------------------
@@ -24,7 +25,7 @@ TASK_CONFIG = {
 }
 
 EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exports")
-OUTPUT_FILE = os.path.join(EXPORTS_DIR, "malicious_ips.txt")
+EXPORTS_DIR = config.exports_path
 
 
 # ----------------------
@@ -52,7 +53,6 @@ def main():
         )
 
         # Filter out local/private IPs and the server's own IP
-        config = get_config()
         server_ip = config.get_server_ip()
 
         public_ips = [
@@ -71,7 +71,11 @@ def main():
             fw = FWType.create(fwname)
             banlist = fw.getBanlist(public_ips)
 
-            output_file = os.path.join(EXPORTS_DIR, f"{fwname}.txt")
+            output_file = os.path.join(EXPORTS_DIR, f"{fwname}_banlist.txt")
+
+            if fwname == "raw":
+                output_file = os.path.join(EXPORTS_DIR, f"malicious_ips.txt")
+
             with open(output_file, "w") as f:
                 f.write(f"{banlist}\n")
 
