@@ -13,7 +13,6 @@ import os
 from database import get_database
 from config import Config, get_config
 
-
 # imports for the __init_subclass__ method, do not remove pls
 from firewall.fwtype import FWType
 from firewall.iptables import Iptables
@@ -947,9 +946,7 @@ class Handler(BaseHTTPRequestHandler):
             if fwtype == "raw":
                 filename = f"malicious_ips.txt"
 
-            file_path = os.path.join(
-                self.config.exports_path, f"{filename}"
-            )
+            file_path = os.path.join(self.config.exports_path, f"{filename}")
 
             try:
                 if os.path.exists(file_path):
