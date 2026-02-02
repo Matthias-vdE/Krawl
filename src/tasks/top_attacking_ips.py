@@ -4,9 +4,14 @@ import os
 from logger import get_app_logger
 from database import get_database
 from config import get_config
-from models import IpStats
+from models import IpStats, AccessLog
 from ip_utils import is_valid_public_ip
+from sqlalchemy import distinct
+from firewall.fwtype import FWType
+from firewall.iptables import Iptables
+from firewall.raw import Raw
 
+config = get_config()
 app_logger = get_app_logger()
 
 # ----------------------
@@ -20,7 +25,7 @@ TASK_CONFIG = {
 }
 
 EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exports")
-OUTPUT_FILE = os.path.join(EXPORTS_DIR, "malicious_ips.txt")
+EXPORTS_DIR = config.exports_path
 
 
 # ----------------------
@@ -48,7 +53,6 @@ def main():
         )
 
         # Filter out local/private IPs and the server's own IP
-        config = get_config()
         server_ip = config.get_server_ip()
 
         public_ips = [
@@ -61,14 +65,24 @@ def main():
         os.makedirs(EXPORTS_DIR, exist_ok=True)
 
         # Write IPs to file (one per line)
-        with open(OUTPUT_FILE, "w") as f:
-            for ip in public_ips:
-                f.write(f"{ip}\n")
+        for fwname in FWType._registry:
 
-        app_logger.info(
-            f"[Background Task] {task_name} exported {len(public_ips)} attacker IPs "
-            f"(filtered {len(attackers) - len(public_ips)} local/private IPs) to {OUTPUT_FILE}"
-        )
+            # get banlist for specific ip
+            fw = FWType.create(fwname)
+            banlist = fw.getBanlist(public_ips)
+
+            output_file = os.path.join(EXPORTS_DIR, f"{fwname}_banlist.txt")
+
+            if fwname == "raw":
+                output_file = os.path.join(EXPORTS_DIR, f"malicious_ips.txt")
+
+            with open(output_file, "w") as f:
+                f.write(f"{banlist}\n")
+
+                app_logger.info(
+                    f"[Background Task] {task_name} exported {len(public_ips)} in {fwname} public IPs"
+                    f"(filtered {len(attackers) - len(public_ips)} local/private IPs) to {output_file}"
+                )
 
     except Exception as e:
         app_logger.error(f"[Background Task] {task_name} failed: {e}")

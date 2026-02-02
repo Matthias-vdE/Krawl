@@ -25,6 +25,9 @@ dashboard:
   # secret_path: super-secret-dashboard-path
   secret_path: test
 
+exports:
+  path: "exports"
+
 database:
   path: "data/krawl.db"
   retention_days: 30

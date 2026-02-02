@@ -9,6 +9,9 @@ import html
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+# imports for the __init_subclass__ method, do not remove pls
+from firewall import fwtype
+
 
 def _escape(value) -> str:
     """Escape HTML special characters to prevent XSS attacks."""
@@ -47,7 +50,9 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
 
     # Generate suspicious accesses rows with clickable IPs
     suspicious_rows = (
-        "\n".join([f"""<tr class="ip-row" data-ip="{_escape(log["ip"])}">
+        "\n".join(
+            [
+                f"""<tr class="ip-row" data-ip="{_escape(log["ip"])}">
             <td class="ip-clickable">{_escape(log["ip"])}</td>
             <td>{_escape(log["path"])}</td>
             <td style="word-break: break-all;">{_escape(log["user_agent"][:60])}</td>
@@ -59,7 +64,10 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                     <div class="loading">Loading stats...</div>
                 </div>
             </td>
-        </tr>""" for log in stats["recent_suspicious"][-10:]])
+        </tr>"""
+                for log in stats["recent_suspicious"][-10:]
+            ]
+        )
         or '<tr><td colspan="4" style="text-align:center;">No suspicious activity detected</td></tr>'
     )
 
@@ -136,6 +144,68 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
         }}
         .download-btn:active {{
             background: #1f7a2f;
+        }}
+        .banlist-dropdown {{
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }}
+        .banlist-dropdown-btn {{
+            display: block;
+            width: 100%;
+            padding: 8px 14px;
+            background: #238636;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 13px;
+            transition: background 0.2s;
+            border: 1px solid #2ea043;
+            cursor: pointer;
+            text-align: left;
+            box-sizing: border-box;
+        }}
+        .banlist-dropdown-btn:hover {{
+            background: #2ea043;
+        }}
+        .banlist-dropdown-menu {{
+            display: none;
+            position: absolute;
+            right: 0;
+            left: 0;
+            background-color: #161b22;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.3);
+            z-index: 1;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            margin-top: 4px;
+            overflow: hidden;
+        }}
+        .banlist-dropdown-menu.show {{
+            display: block;
+        }}
+        .banlist-dropdown-menu a {{
+            color: #c9d1d9;
+            padding: 6px 12px;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+            font-size: 12px;
+        }}
+        .banlist-dropdown-menu a:hover {{
+            background-color: #1c2128;
+            color: #58a6ff;
+        }}
+        .banlist-dropdown-menu a.disabled {{
+            color: #6e7681;
+            cursor: not-allowed;
+            pointer-events: none;
+        }}
+        .banlist-icon {{
+            font-size: 14px;
         }}
         .stats-grid {{
             display: grid;
@@ -978,9 +1048,17 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
             <span class="github-logo-text">BlessedRebuS/Krawl</span>
         </a>
         <div class="download-section">
-            <a href="{dashboard_path}/api/download/malicious_ips.txt" class="download-btn" download>
-            Export Malicious IPs
-            </a>
+            <div class="banlist-dropdown">
+                <button class="banlist-dropdown-btn" onclick="toggleBanlistDropdown()">Export IPs Banlist</button>
+                <div id="banlistDropdown" class="banlist-dropdown-menu">
+                    <a href="javascript:void(0)" onclick="downloadBanlist('raw')">
+                        <span>Raw IPs</span>
+                    </a>
+                    <a href="javascript:void(0)" onclick="downloadBanlist('iptables')">
+                        <span>IPTables Rules</span>
+                    </a>
+                </div>
+            </div>
         </div>
         <h1>Krawl Dashboard</h1>
 
@@ -1269,6 +1347,43 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
     <script>
         const DASHBOARD_PATH = '{dashboard_path}';
 
+        // Dropdown menu functions
+        function toggleBanlistDropdown() {{
+            const dropdown = document.getElementById('banlistDropdown');
+            dropdown.classList.toggle('show');
+        }}
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {{
+            const dropdown = document.querySelector('.banlist-dropdown');
+            if (!dropdown.contains(event.target)) {{
+                const menu = document.getElementById('banlistDropdown');
+                menu.classList.remove('show');
+            }}
+        }});
+
+        // Download banlist function
+        function downloadBanlist(fwtype) {{
+            const url = DASHBOARD_PATH + '/api/get_banlist?fwtype=' + encodeURIComponent(fwtype);
+            
+            // Create a temporary link and trigger download
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Set filename based on type
+            const filename = fwtype === 'raw' ? 'banlist_raw.txt' : 'banlist_iptables.sh';
+            link.setAttribute('download', filename);
+            
+            // Append to body, click, and remove
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Close dropdown after download
+            const menu = document.getElementById('banlistDropdown');
+            menu.classList.remove('show');
+        }}
+
         function formatTimestamp(isoTimestamp) {{
             if (!isoTimestamp) return 'N/A';
             try {{
@@ -1457,7 +1572,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
             if (stats.category_history && stats.category_history.length > 0) {{
                 html += '<div class="timeline-section">';
                 html += '<div class="timeline-container">';
-                
+
                 // Timeline column
                 html += '<div class="timeline-column">';
                 html += '<div class="timeline-header">Behavior Timeline</div>';
@@ -1468,16 +1583,16 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                     const timestamp = formatTimestamp(change.timestamp);
                     const oldClass = change.old_category ? 'category-' + change.old_category.toLowerCase().replace('_', '-') : '';
                     const newClass = 'category-' + categoryClass;
-                    
+
                     html += '<div class="timeline-item">';
                     html += `<div class="timeline-marker ${{categoryClass}}"></div>`;
                     html += '<div class="timeline-content">';
-                    
+
                     if (change.old_category) {{
                         html += `<span class="category-badge ${{oldClass}}">${{change.old_category}}</span>`;
                         html += '<span style="color: #8b949e; margin: 0 4px;">→</span>';
                     }}
-                    
+
                     html += `<span class="category-badge ${{newClass}}">${{change.new_category}}</span>`;
                     html += `<div class="timeline-time">${{timestamp}}</div>`;
                     html += '</div>';
@@ -1486,10 +1601,10 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
 
                 html += '</div>';
                 html += '</div>';
-                
+
                 // Reputation column
                 html += '<div class="timeline-column">';
-                
+
                 if (stats.list_on && Object.keys(stats.list_on).length > 0) {{
                     // Filter out is_hosting and is_proxy from the displayed list
                     const filteredList = Object.entries(stats.list_on).filter(([source, data]) => 
@@ -1524,7 +1639,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                     html += '<div class="timeline-header">Reputation</div>';
                     html += '<span class="reputation-clean" title="Not found on public blacklists">✓ Clean</span>';
                 }}
-                
+
                 html += '</div>';
                 html += '</div>';
                 html += '</div>';
@@ -1728,23 +1843,23 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
             document.querySelectorAll('.tab-content').forEach(tab => {{
                 tab.classList.remove('active');
             }});
-            
+
             // Remove active class from all buttons
             document.querySelectorAll('.tab-button').forEach(btn => {{
                 btn.classList.remove('active');
             }});
-            
+
             // Show selected tab
             const selectedTab = document.getElementById(tabName);
             const selectedButton = document.querySelector(`.tab-button[href="#${{tabName}}"]`);
-            
+
             if (selectedTab) {{
                 selectedTab.classList.add('active');
             }}
             if (selectedButton) {{
                 selectedButton.classList.add('active');
             }}
-            
+
             // Load data for this tab
             if (tabName === 'ip-stats') {{
                 loadIpStatistics(1);
@@ -1786,7 +1901,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
             if (e.target.classList.contains('sortable') && e.target.closest('#ip-stats-tbody')) {{
                 return; // Don't sort when inside tbody
             }}
-            
+
             const sortHeader = e.target.closest('th.sortable');
             if (!sortHeader) return;
 
@@ -1794,7 +1909,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
             if (!table || !table.classList.contains('ip-stats-table')) return;
 
             const sortField = sortHeader.getAttribute('data-sort');
-            
+
             // Toggle sort order if clicking the same field
             if (currentSortBy === sortField) {{
                 currentSortOrder = currentSortOrder === 'desc' ? 'asc' : 'desc';
@@ -1825,9 +1940,9 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                 console.error('IP stats tbody not found');
                 return;
             }}
-            
+
             tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Loading...</td></tr>';
-            
+
             try {{
                 console.log('Fetching attackers from page:', page, 'sort:', currentSortBy, currentSortOrder);
                 const response = await fetch(DASHBOARD_PATH + '/api/attackers?page=' + page + '&page_size=' + PAGE_SIZE + '&sort_by=' + currentSortBy + '&sort_order=' + currentSortOrder, {{
@@ -1837,14 +1952,14 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                         'Pragma': 'no-cache'
                     }}
                 }});
-                
+
                 console.log('Response status:', response.status);
-                
+
                 if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
-                
+
                 const data = await response.json();
                 console.log('Received data:', data);
-                
+
                 if (!data.attackers || data.attackers.length === 0) {{
                     tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No attackers on this page.</td></tr>';
                     currentPage = page;
@@ -1852,7 +1967,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                     updatePaginationControls();
                     return;
                 }}
-                
+
                 // Update pagination info
                 currentPage = data.pagination.page;
                 totalPages = data.pagination.total_pages;
@@ -1860,7 +1975,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                 document.getElementById('total-pages').textContent = totalPages;
                 document.getElementById('total-attackers').textContent = data.pagination.total_attackers;
                 updatePaginationControls();
-                
+
                 let html = '';
                 data.attackers.forEach((attacker, index) => {{
                     const rank = (currentPage - 1) * PAGE_SIZE + index + 1;
@@ -1880,10 +1995,10 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                         </td>
                     </tr>`;
                 }});
-                
+
                 tbody.innerHTML = html;
                 console.log('Populated', data.attackers.length, 'attacker records');
-                
+
                 // Re-attach click listeners for expandable rows
                 attachAttackerClickListeners();
             }} catch (err) {{
@@ -1895,7 +2010,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
         function updatePaginationControls() {{
             const prevBtn = document.getElementById('prev-page-btn');
             const nextBtn = document.getElementById('next-page-btn');
-            
+
             if (prevBtn) prevBtn.disabled = currentPage <= 1;
             if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
         }}
@@ -2167,7 +2282,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
         async function loadOverviewTable(tableId) {{
             const config = tableConfig[tableId];
             if (!config) return;
-            
+
             const state = overviewState[tableId];
             const tbody = document.getElementById(tableId + '-tbody');
             if (!tbody) return;
@@ -2201,7 +2316,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                 let html = '';
                 items.forEach((item, index) => {{
                     const rank = (state.currentPage - 1) * 5 + index + 1;
-                    
+
                     if (tableId === 'honeypot') {{
                         html += `<tr class="ip-row" data-ip="${{item.ip}}"><td class="rank">${{rank}}</td><td class="ip-clickable">${{item.ip}}</td><td>${{item.paths.join(', ')}}</td><td>${{item.count}}</td></tr>`;
                         html += `<tr class="ip-stats-row" id="stats-row-honeypot-${{item.ip.replace(/\\./g, '-')}}" style="display: none;">
@@ -2347,12 +2462,12 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
         async function showIpDetail(ip) {{
             const modal = document.getElementById('ip-detail-modal');
             const bodyDiv = document.getElementById('ip-detail-body');
-            
+
             if (!modal || !bodyDiv) return;
-            
+
             bodyDiv.innerHTML = '<div class="loading" style="text-align: center;">Loading IP details...</div>';
             modal.classList.add('show');
-            
+
             try {{
                 const response = await fetch(`${{DASHBOARD_PATH}}/api/ip-stats/${{ip}}`, {{
                     cache: 'no-store',
@@ -2361,9 +2476,9 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                         'Pragma': 'no-cache'
                     }}
                 }});
-                
+
                 if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
-                
+
                 const stats = await response.json();
                 bodyDiv.innerHTML = '<h2>' + stats.ip + ' - Detailed Statistics</h2>' + formatIpStats(stats);
             }} catch (err) {{
@@ -2790,7 +2905,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
         // Initialize map when Attacks tab is opened
         const originalSwitchTab = window.switchTab;
         let attackTypesChartLoaded = false;
-        
+
         window.switchTab = function(tabName) {{
             originalSwitchTab(tabName);
             if (tabName === 'ip-stats') {{
@@ -2823,7 +2938,7 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
                 }});
 
                 if (!response.ok) throw new Error('Failed to fetch attack types');
-                
+
                 const data = await response.json();
                 const attacks = data.attacks || [];
 
