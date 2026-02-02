@@ -13,11 +13,9 @@ import os
 from database import get_database
 from config import Config, get_config
 
-from database import get_database
-from config import Config, get_config
-from firewall.fwtype import FWType
 
 # imports for the __init_subclass__ method, do not remove pls
+from firewall.fwtype import FWType
 from firewall.iptables import Iptables
 from firewall.raw import Raw
 
@@ -945,10 +943,14 @@ class Handler(BaseHTTPRequestHandler):
 
             # get fwtype from request params
             fwtype = query_params.get("fwtype", ["iptables"])[0]
+            filename = f"{fwtype}_banlist.txt"
+            if fwtype == "raw":
+                filename = f"malicious_ips.txt"
 
             file_path = os.path.join(
-                os.path.dirname(__file__), "exports", f"{fwtype}.txt"
+                self.config.exports_path, f"{filename}"
             )
+
             try:
                 if os.path.exists(file_path):
                     with open(file_path, "rb") as f:
@@ -957,7 +959,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_header("Content-type", "text/plain")
                     self.send_header(
                         "Content-Disposition",
-                        f'attachment; filename="{fwtype}.txt"',
+                        f'attachment; filename="{filename}"',
                     )
                     self.send_header("Content-Length", str(len(content)))
                     self.end_headers()
