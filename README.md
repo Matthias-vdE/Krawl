@@ -211,6 +211,8 @@ Krawl uses a **configuration hierarchy** in which **environment variables take p
 | `KRAWL_PROBABILITY_ERROR_CODES` | Error response probability (0-100%) | `0` |
 | `KRAWL_DATABASE_PATH` | Database file location | `data/krawl.db` |
 | `KRAWL_EXPORTS_PATH` | Path where firewalls rule sets are exported | `exports` |
+| `KRAWL_BACKUPS_PATH` | Path where database dump are saved | `backups` |
+| `KRAWL_BACKUPS_CRON` | cron expression to control backup job schedule | `*/30 * * * *` |
 | `KRAWL_DATABASE_RETENTION_DAYS` | Days to retain data in database | `30` |
 | `KRAWL_HTTP_RISKY_METHODS_THRESHOLD` | Threshold for risky HTTP methods detection | `0.1` |
 | `KRAWL_VIOLATED_ROBOTS_THRESHOLD` | Threshold for robots.txt violations | `0.1` |
