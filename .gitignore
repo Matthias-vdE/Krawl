@@ -68,6 +68,7 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+backups/
 
 # Temporary files
 *.tmp

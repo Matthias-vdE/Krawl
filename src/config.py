@@ -39,6 +39,10 @@ class Config:
 
     # exporter settings
     exports_path: str = "exports"
+
+    # backup job settings
+    backups_path: str = "backups"
+    backups_cron: str = "*/30 * * * *"
     # Database settings
     database_path: str = "data/krawl.db"
     database_retention_days: int = 30
@@ -153,6 +157,7 @@ class Config:
         dashboard = data.get("dashboard", {})
         api = data.get("api", {})
         exports = data.get("exports", {})
+        backups = data.get("backups", {})
         database = data.get("database", {})
         behavior = data.get("behavior", {})
         analyzer = data.get("analyzer") or {}
@@ -189,6 +194,8 @@ class Config:
             dashboard_secret_path=dashboard_path,
             probability_error_codes=behavior.get("probability_error_codes", 0),
             exports_path=exports.get("path"),
+            backups_path=backups.get("path"),
+            backups_cron=backups.get("cron"),
             database_path=database.get("path", "data/krawl.db"),
             database_retention_days=database.get("retention_days", 30),
             http_risky_methods_threshold=analyzer.get(

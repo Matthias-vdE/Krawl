@@ -25,6 +25,10 @@ dashboard:
   # secret_path: super-secret-dashboard-path
   secret_path: test
 
+backups:
+  path: "backups"
+  cron: "*/30 * * * *"
+
 exports:
   path: "exports"
 
