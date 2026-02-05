@@ -18,6 +18,7 @@ services:
       - ./logs:/app/logs
       - ./exports:/app/exports
       - ./data:/app/data
+      - ./backups:/app/backups
     restart: unless-stopped
     develop:
       watch:
