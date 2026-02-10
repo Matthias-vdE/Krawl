@@ -75,19 +75,22 @@ def generate_dashboard(stats: dict, dashboard_path: str = "") -> str:
     
     # Add honeypot triggers
     for honeypot in stats.get("honeypot_triggered_ips", [])[-20:]:
-        paths = honeypot.get("paths", []) if isinstance(honeypot.get("paths"), list) else []
+        # honeypot is a tuple (ip, paths)
+        ip = honeypot[0]
+        paths = honeypot[1] if isinstance(honeypot[1], list) else []
         suspicious_activities.append({
             "type": "Honeypot",
-            "ip": honeypot["ip"],
+            "ip": ip,
             "path": paths[0] if paths else "Multiple",
             "user_agent": "",
-            "timestamp": honeypot.get("last_seen", honeypot.get("timestamp", "")),
+            "timestamp": "",  # Tuples don't have timestamp
             "details": f"{len(paths)} trap(s) triggered"
         })
     
     # Sort by timestamp (most recent first) and take last 20
+    # Put entries with empty timestamps at the end
     try:
-        suspicious_activities.sort(key=lambda x: x["timestamp"], reverse=True)
+        suspicious_activities.sort(key=lambda x: (x["timestamp"] == "", x["timestamp"]), reverse=True)
     except:
         pass
     suspicious_activities = suspicious_activities[:20]
