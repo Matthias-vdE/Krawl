@@ -109,7 +109,7 @@ services:
       - "5000:5000"
     environment:
       - CONFIG_LOCATION=config.yaml
-      - TZ="Europe/Rome"
+      - TZ=Europe/Rome
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - krawl-data:/app/data
@@ -284,6 +284,32 @@ Pages such as `/users`, `/search`, `/contact`, `/info`, `/input`, and `/feedback
 
 Automated tools like **SQLMap** will receive a different randomized database error on each request, increasing scan noise and confusing the attacker. All detected attacks are logged and displayed in the dashboard.
 
+## Example usage behind reverse proxy
+
+You can configure a reverse proxy so all web requests land on the Krawl page by default, and hide your real content behind a secret hidden url. For example:
+
+```bash
+location / {
+    proxy_pass https://your-krawl-instance;
+    proxy_pass_header Server;
+}
+
+location /my-hidden-service {
+    proxy_pass https://my-hidden-service;
+    proxy_pass_header Server;
+}
+```
+
+Alternatively, you can create a bunch of different "interesting" looking domains. For example:
+
+- admin.example.com
+- portal.example.com
+- sso.example.com
+- login.example.com
+- ...
+
+Additionally, you may configure your reverse proxy to forward all non-existing subdomains (e.g. nonexistent.example.com) to one of these domains so that any crawlers that are guessing domains at random will automatically end up at your Krawl instance.
+
 ## Customizing the Canary Token
 To create a custom canary token, visit https://canarytokens.org
 
@@ -292,7 +318,7 @@ and generate a “Web bug” canary token.
 This optional token is triggered when a crawler fully traverses the webpage until it reaches 0. At that point, a URL is returned. When this URL is requested, it sends an alert to the user via email, including the visitor’s IP address and user agent.
 
 
-To enable this feature, set the canary token URL [using the environment variable](#configuration-via-environment-variables) `CANARY_TOKEN_URL`.
+To enable this feature, set the canary token URL [using the environment variable](#configuration-via-environment-variables) `KRAWL_CANARY_TOKEN_URL`.
 
 ## Customizing the wordlist 
 
