@@ -573,7 +573,9 @@ class AccessTracker:
                 try:
                     ban_time = datetime.fromisoformat(ban_timestamp)
                     time_diff = (current_time - ban_time).total_seconds()
-                    effective_duration = self.ban_duration_seconds * data.get("ban_multiplier", 1)
+                    effective_duration = self.ban_duration_seconds * data.get(
+                        "ban_multiplier", 1
+                    )
                     if time_diff > effective_duration:
                         data["count"] = 0
                         data["ban_timestamp"] = None

@@ -42,9 +42,7 @@ def main():
         cutoff = datetime.now() - timedelta(days=retention_days)
 
         # Delete attack detections linked to old access logs first (FK constraint)
-        old_log_ids = session.query(AccessLog.id).filter(
-            AccessLog.timestamp < cutoff
-        )
+        old_log_ids = session.query(AccessLog.id).filter(AccessLog.timestamp < cutoff)
         detections_deleted = (
             session.query(AttackDetection)
             .filter(AttackDetection.access_log_id.in_(old_log_ids))

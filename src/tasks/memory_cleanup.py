@@ -40,9 +40,7 @@ def main():
 
         stats_after = tracker.get_memory_stats()
 
-        visits_reduced = (
-            stats_before["ip_page_visits"] - stats_after["ip_page_visits"]
-        )
+        visits_reduced = stats_before["ip_page_visits"] - stats_after["ip_page_visits"]
 
         if visits_reduced > 0:
             app_logger.info(

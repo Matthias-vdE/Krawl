@@ -1061,9 +1061,9 @@ class DatabaseManager:
             row = base.one()
 
             # Honeypot unique IPs (separate query for distinct on filtered subset)
-            hp_query = session.query(
-                func.count(distinct(AccessLog.ip))
-            ).filter(AccessLog.is_honeypot_trigger == True)
+            hp_query = session.query(func.count(distinct(AccessLog.ip))).filter(
+                AccessLog.is_honeypot_trigger == True
+            )
             hp_query = self._public_ip_filter(hp_query, AccessLog.ip, server_ip)
             honeypot_ips = hp_query.scalar() or 0
 
@@ -1653,7 +1653,9 @@ class DatabaseManager:
             )
 
             # Get paginated access logs with attack detections
-            query = session.query(AccessLog).join(AttackDetection).distinct(AccessLog.id)
+            query = (
+                session.query(AccessLog).join(AttackDetection).distinct(AccessLog.id)
+            )
 
             if sort_by == "timestamp":
                 query = query.order_by(

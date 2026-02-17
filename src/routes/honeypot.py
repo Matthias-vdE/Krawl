@@ -41,7 +41,6 @@ from deception_responses import (
 from wordlists import get_wordlists
 from logger import get_app_logger, get_access_logger, get_credential_logger
 
-
 # --- Auto-tracking dependency ---
 # Records requests that match attack patterns or honeypot trap paths.
 
@@ -63,6 +62,7 @@ async def _track_honeypot_request(request: Request):
 
     if body:
         import urllib.parse
+
         decoded_body = urllib.parse.unquote(body)
         attack_findings.extend(tracker.detect_attack_type(decoded_body))
 
@@ -401,7 +401,9 @@ async def trap_page(request: Request, path: str):
 
     # Record access unless the router dependency already handled it
     # (attack pattern or honeypot path → already recorded by _track_honeypot_request)
-    if not tracker.detect_attack_type(full_path) and not tracker.is_honeypot_path(full_path):
+    if not tracker.detect_attack_type(full_path) and not tracker.is_honeypot_path(
+        full_path
+    ):
         tracker.record_access(
             ip=client_ip,
             path=full_path,

@@ -243,13 +243,13 @@ def fetch_geolocation_from_api(ip: str, app_logger) -> tuple:
     """
     try:
         geoloc_data = extract_geolocation_from_ip(ip)
-        
+
         if geoloc_data:
             country_code = geoloc_data.get("country_code")
             city = geoloc_data.get("city")
             asn = geoloc_data.get("asn")
             asn_org = geoloc_data.get("org")
-            
+
             return (country_code, city, asn, asn_org)
     except requests.RequestException as e:
         app_logger.warning(f"Failed to fetch geolocation for {ip}: {e}")
