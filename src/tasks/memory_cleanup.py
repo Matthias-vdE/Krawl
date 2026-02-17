@@ -63,8 +63,7 @@ def main():
         app_logger.debug(
             f"Memory stats after cleanup: "
             f"access_logs={stats_after['access_log_size']}, "
-            f"credentials={stats_after['credential_attempts_size']}, "
-            f"unique_ips={stats_after['unique_ips_tracked']}"
+            f"credentials={stats_after['credential_attempts_size']}"
         )
 
     except Exception as e:

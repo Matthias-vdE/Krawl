@@ -49,16 +49,12 @@ class AccessTracker:
         """
         self.max_pages_limit = max_pages_limit
         self.ban_duration_seconds = ban_duration_seconds
-        self.ip_counts: Dict[str, int] = defaultdict(int)
-        self.path_counts: Dict[str, int] = defaultdict(int)
-        self.user_agent_counts: Dict[str, int] = defaultdict(int)
         self.access_log: List[Dict] = []
         self.credential_attempts: List[Dict] = []
 
         # Memory limits for in-memory lists (prevents unbounded growth)
         self.max_access_log_size = 10_000  # Keep only recent 10k accesses
         self.max_credential_log_size = 5_000  # Keep only recent 5k attempts
-        self.max_counter_keys = 100_000  # Max unique IPs/paths/user agents
 
         # Track pages visited by each IP (for good crawler limiting)
         self.ip_page_visits: Dict[str, Dict[str, object]] = defaultdict(dict)
@@ -105,9 +101,6 @@ class AccessTracker:
                 "common_probes": r"(/admin|/backup|/config|/database|/private|/uploads|/wp-admin|/login|/phpMyAdmin|/phpmyadmin|/users|/search|/contact|/info|/input|/feedback|/server|/api/v1/|/api/v2/|/api/search|/api/sql|/api/database|\.env|/credentials\.txt|/passwords\.txt|\.git|/backup\.sql|/db_backup\.sql)",
                 "command_injection": r"(\||;|`|\$\(|&&)",
             }
-
-        # Track IPs that accessed honeypot paths from robots.txt
-        self.honeypot_triggered: Dict[str, List[str]] = defaultdict(list)
 
         # Database manager for persistence (lazily initialized)
         self._db_manager = db_manager
@@ -278,11 +271,6 @@ class AccessTracker:
         if server_ip and ip == server_ip:
             return
 
-        self.ip_counts[ip] += 1
-        self.path_counts[path] += 1
-        if user_agent:
-            self.user_agent_counts[user_agent] += 1
-
         # Path attack type detection
         attack_findings = self.detect_attack_type(path)
 
@@ -298,10 +286,6 @@ class AccessTracker:
             or len(attack_findings) > 0
         )
         is_honeypot = self.is_honeypot_path(path)
-
-        # Track if this IP accessed a honeypot path
-        if is_honeypot:
-            self.honeypot_triggered[ip].append(path)
 
         # In-memory storage for dashboard
         self.access_log.append(
@@ -597,27 +581,6 @@ class AccessTracker:
         except Exception:
             return 0
 
-    def get_top_ips(self, limit: int = 10) -> List[Tuple[str, int]]:
-        """Get top N IP addresses by access count (excludes local/private IPs)"""
-        filtered = [
-            (ip, count)
-            for ip, count in self.ip_counts.items()
-            if not is_local_or_private_ip(ip)
-        ]
-        return sorted(filtered, key=lambda x: x[1], reverse=True)[:limit]
-
-    def get_top_paths(self, limit: int = 10) -> List[Tuple[str, int]]:
-        """Get top N paths by access count"""
-        return sorted(self.path_counts.items(), key=lambda x: x[1], reverse=True)[
-            :limit
-        ]
-
-    def get_top_user_agents(self, limit: int = 10) -> List[Tuple[str, int]]:
-        """Get top N user agents by access count"""
-        return sorted(self.user_agent_counts.items(), key=lambda x: x[1], reverse=True)[
-            :limit
-        ]
-
     def get_suspicious_accesses(self, limit: int = 20) -> List[Dict]:
         """Get recent suspicious accesses (excludes local/private IPs)"""
         suspicious = [
@@ -636,14 +599,6 @@ class AccessTracker:
             if log.get("attack_types") and not is_local_or_private_ip(log.get("ip", ""))
         ]
         return attacks[-limit:]
-
-    def get_honeypot_triggered_ips(self) -> List[Tuple[str, List[str]]]:
-        """Get IPs that accessed honeypot paths (excludes local/private IPs)"""
-        return [
-            (ip, paths)
-            for ip, paths in self.honeypot_triggered.items()
-            if not is_local_or_private_ip(ip)
-        ]
 
     def get_stats(self) -> Dict:
         """Get statistics summary from database."""
@@ -720,9 +675,5 @@ class AccessTracker:
         return {
             "access_log_size": len(self.access_log),
             "credential_attempts_size": len(self.credential_attempts),
-            "unique_ips_tracked": len(self.ip_counts),
-            "unique_paths_tracked": len(self.path_counts),
-            "unique_user_agents": len(self.user_agent_counts),
             "unique_ip_page_visits": len(self.ip_page_visits),
-            "honeypot_triggered_ips": len(self.honeypot_triggered),
         }
