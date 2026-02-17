@@ -12,6 +12,7 @@ from dependencies import get_db, get_templates
 router = APIRouter()
 
 
+@router.get("")
 @router.get("/")
 async def dashboard_page(request: Request):
     db = get_db()
