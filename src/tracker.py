@@ -11,6 +11,20 @@ from wordlists import get_wordlists
 from database import get_database, DatabaseManager
 from ip_utils import is_local_or_private_ip, is_valid_public_ip
 
+# Module-level singleton for background task access
+_tracker_instance: "AccessTracker | None" = None
+
+
+def get_tracker() -> "AccessTracker | None":
+    """Get the global AccessTracker singleton (set during app startup)."""
+    return _tracker_instance
+
+
+def set_tracker(tracker: "AccessTracker"):
+    """Store the AccessTracker singleton for background task access."""
+    global _tracker_instance
+    _tracker_instance = tracker
+
 
 class AccessTracker:
     """
@@ -88,7 +102,7 @@ class AccessTracker:
                 "path_traversal": r"\.\.",
                 "sql_injection": r"('|--|;|\bOR\b|\bUNION\b|\bSELECT\b|\bDROP\b)",
                 "xss_attempt": r"(<script|javascript:|onerror=|onload=)",
-                "common_probes": r"(wp-admin|phpmyadmin|\.env|\.git|/admin|/config)",
+                "common_probes": r"(/admin|/backup|/config|/database|/private|/uploads|/wp-admin|/login|/phpMyAdmin|/phpmyadmin|/users|/search|/contact|/info|/input|/feedback|/server|/api/v1/|/api/v2/|/api/search|/api/sql|/api/database|\.env|/credentials\.txt|/passwords\.txt|\.git|/backup\.sql|/db_backup\.sql)",
                 "command_injection": r"(\||;|`|\$\(|&&)",
             }
 

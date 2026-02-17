@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
 
 from config import get_config
-from tracker import AccessTracker
+from tracker import AccessTracker, set_tracker
 from database import initialize_database
 from tasks_master import get_tasksmaster
 from logger import initialize_logging, get_app_logger
@@ -40,6 +40,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize tracker
     tracker = AccessTracker(config.max_pages_limit, config.ban_duration_seconds)
+    set_tracker(tracker)
 
     # Store in app.state for dependency injection
     app.state.config = config

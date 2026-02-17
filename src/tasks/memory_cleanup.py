@@ -28,21 +28,21 @@ def main():
     Called periodically to prevent unbounded memory growth.
     """
     try:
-        # Import here to avoid circular imports
-        from handler import Handler
+        from tracker import get_tracker
 
-        if not Handler.tracker:
+        tracker = get_tracker()
+        if not tracker:
             app_logger.warning("Tracker not initialized, skipping memory cleanup")
             return
 
         # Get memory stats before cleanup
-        stats_before = Handler.tracker.get_memory_stats()
+        stats_before = tracker.get_memory_stats()
 
         # Run cleanup
-        Handler.tracker.cleanup_memory()
+        tracker.cleanup_memory()
 
         # Get memory stats after cleanup
-        stats_after = Handler.tracker.get_memory_stats()
+        stats_after = tracker.get_memory_stats()
 
         # Log changes
         access_log_reduced = (

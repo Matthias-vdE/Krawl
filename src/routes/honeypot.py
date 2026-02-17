@@ -391,10 +391,22 @@ async def trap_page(request: Request, path: str):
     if "wordpress" in full_path.lower():
         return HTMLResponse(html_templates.wordpress())
 
-    if tracker.is_suspicious_user_agent(user_agent):
+    is_suspicious = tracker.is_suspicious_user_agent(user_agent)
+
+    if is_suspicious:
         access_logger.warning(
             f"[SUSPICIOUS] {client_ip} - {user_agent[:50]} - {full_path}"
         )
+
+    # Always record trap page access (feeds total counter + suspicious panel).
+    # Only store raw_request for suspicious/attack requests to avoid DB bloat.
+    tracker.record_access(
+        ip=client_ip,
+        path=full_path,
+        user_agent=user_agent,
+        method=request.method,
+        raw_request=build_raw_request(request) if is_suspicious else "",
+    )
 
     # Random error response
     if _should_return_error(config):
