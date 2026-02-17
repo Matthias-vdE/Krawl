@@ -43,11 +43,11 @@ from logger import get_app_logger, get_access_logger, get_credential_logger
 
 
 # --- Auto-tracking dependency ---
-# Only records requests where an attack pattern is detected in the path or body.
+# Records requests that match attack patterns or honeypot trap paths.
 
 
 async def _track_honeypot_request(request: Request):
-    """Record access only for requests with detected attack patterns."""
+    """Record access for requests with attack patterns or honeypot path hits."""
     tracker = request.app.state.tracker
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "")
@@ -58,7 +58,7 @@ async def _track_honeypot_request(request: Request):
         body_bytes = await request.body()
         body = body_bytes.decode("utf-8", errors="replace")
 
-    # Only record if an attack pattern is detected in the path or body
+    # Check attack patterns in path and body
     attack_findings = tracker.detect_attack_type(path)
 
     if body:
@@ -66,7 +66,8 @@ async def _track_honeypot_request(request: Request):
         decoded_body = urllib.parse.unquote(body)
         attack_findings.extend(tracker.detect_attack_type(decoded_body))
 
-    if attack_findings:
+    # Record if attack pattern detected OR path is a honeypot trap
+    if attack_findings or tracker.is_honeypot_path(path):
         tracker.record_access(
             ip=client_ip,
             path=path,
@@ -398,15 +399,16 @@ async def trap_page(request: Request, path: str):
             f"[SUSPICIOUS] {client_ip} - {user_agent[:50]} - {full_path}"
         )
 
-    # Always record trap page access (feeds total counter + suspicious panel).
-    # Only store raw_request for suspicious/attack requests to avoid DB bloat.
-    tracker.record_access(
-        ip=client_ip,
-        path=full_path,
-        user_agent=user_agent,
-        method=request.method,
-        raw_request=build_raw_request(request) if is_suspicious else "",
-    )
+    # Record access unless the router dependency already handled it
+    # (attack pattern or honeypot path → already recorded by _track_honeypot_request)
+    if not tracker.detect_attack_type(full_path) and not tracker.is_honeypot_path(full_path):
+        tracker.record_access(
+            ip=client_ip,
+            path=full_path,
+            user_agent=user_agent,
+            method=request.method,
+            raw_request=build_raw_request(request) if is_suspicious else "",
+        )
 
     # Random error response
     if _should_return_error(config):
