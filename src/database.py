@@ -359,6 +359,16 @@ class DatabaseManager:
         sanitized_ip = sanitize_ip(ip)
         ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
 
+        if not ip_stats:
+            applogger.warning(
+                f"No IpStats record found for {sanitized_ip}, creating one."
+            )
+            now = datetime.now()
+            ip_stats = IpStats(
+                ip=sanitized_ip, total_requests=0, first_seen=now, last_seen=now
+            )
+            session.add(ip_stats)
+
         # Check if category has changed and record it
         old_category = ip_stats.category
         if old_category != category:
@@ -389,6 +399,10 @@ class DatabaseManager:
         session = self.session
         sanitized_ip = sanitize_ip(ip)
         ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
+
+        if not ip_stats:
+            applogger.warning(f"No IpStats record found for {sanitized_ip}")
+            return
 
         # Record the manual category change
         old_category = ip_stats.category
