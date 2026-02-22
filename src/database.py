@@ -790,16 +790,22 @@ class DatabaseManager:
 
     def get_ips_needing_reevaluation(self) -> List[str]:
         """
-        Get all IP addresses that have been flagged for reevaluation.
+        Get all IP addresses that need evaluation.
 
         Returns:
             List of IP addresses where need_reevaluation is True
+            or that have never been analyzed (last_analysis is NULL)
         """
         session = self.session
         try:
             ips = (
                 session.query(IpStats.ip)
-                .filter(IpStats.need_reevaluation == True)
+                .filter(
+                    or_(
+                        IpStats.need_reevaluation == True,
+                        IpStats.last_analysis.is_(None),
+                    )
+                )
                 .all()
             )
             return [ip[0] for ip in ips]
