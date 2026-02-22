@@ -7,7 +7,6 @@ All endpoints are prefixed with the secret dashboard path.
 """
 
 import os
-import json
 
 from fastapi import APIRouter, Request, Response, Query
 from fastapi.responses import JSONResponse, PlainTextResponse

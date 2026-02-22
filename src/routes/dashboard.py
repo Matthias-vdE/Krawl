@@ -6,6 +6,8 @@ Renders the main dashboard page with server-side data for initial load.
 """
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+from logger import get_app_logger
 
 from dependencies import get_db, get_templates
 
@@ -37,3 +39,32 @@ async def dashboard_page(request: Request):
             "suspicious_activities": suspicious,
         },
     )
+
+@router.get("/ip/{ip_address:path}")
+async def ip_page(ip_address: str, request: Request):
+    db = get_db()
+    try:
+        stats = db.get_ip_stats_by_ip(ip_address)
+        config = request.app.state.config
+        dashboard_path = "/" + config.dashboard_secret_path.lstrip("/")
+
+        if stats:
+
+            templates = get_templates()
+            return templates.TemplateResponse(
+                "dashboard/ip.html",
+                {
+                    "request": request,
+                    "dashboard_path": dashboard_path,
+                    "stats": stats,
+                    "ip_address": ip_address
+                },
+            )
+        else:
+            return JSONResponse(
+                content={"error": "IP not found"},
+            )
+    except Exception as e:
+        get_app_logger().error(f"Error fetching IP stats: {e}")
+        return JSONResponse(content={"error": str(e)})
+

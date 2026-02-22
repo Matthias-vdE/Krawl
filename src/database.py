@@ -850,6 +850,69 @@ class DatabaseManager:
         except Exception as e:
             session.rollback()
             raise
+
+    def get_access_logs_paginated(
+        self,
+        page: int = 1,
+        page_size: int = 25,
+        ip_filter: Optional[str] = None,
+        suspicious_only: bool = False,
+        since_minutes: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Retrieve access logs with pagination and optional filtering.
+
+        Args:
+            page: Page to retrieve
+            page_size: Number of records for page
+            ip_filter: Filter by IP address
+            suspicious_only: Only return suspicious requests
+            since_minutes: Only return logs from the last N minutes
+
+        Returns:
+            List of access log dictionaries
+        """
+        session = self.session
+        try:
+            offset = (page - 1) * page_size
+            query = session.query(AccessLog).order_by(AccessLog.timestamp.desc())
+
+            if ip_filter:
+                query = query.filter(AccessLog.ip == sanitize_ip(ip_filter))
+            if suspicious_only:
+                query = query.filter(AccessLog.is_suspicious == True)
+            if since_minutes is not None:
+                cutoff_time = datetime.now() - timedelta(minutes=since_minutes)
+                query = query.filter(AccessLog.timestamp >= cutoff_time)
+
+            logs = query.offset(offset).limit(page_size).all()
+            # Get total count of attackers
+            total_access_logs = (
+                session.query(AccessLog).filter(AccessLog.ip == sanitize_ip(ip_filter)).count()
+            )
+            total_pages = (total_access_logs + page_size - 1) // page_size
+
+            return {
+                    "access_logs": [
+                    {
+                            "id": log.id,
+                            "ip": log.ip,
+                            "path": log.path,
+                            "user_agent": log.user_agent,
+                            "method": log.method,
+                            "is_suspicious": log.is_suspicious,
+                            "is_honeypot_trigger": log.is_honeypot_trigger,
+                            "timestamp": log.timestamp.isoformat(),
+                            "attack_types": [d.attack_type for d in log.attack_detections],
+                }
+                for log in logs ],
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_logs": total_access_logs,
+                    "total_pages": total_pages,
+                },
+                }
         finally:
             self.close_session()
 

@@ -167,6 +167,42 @@ async def htmx_attackers(
     )
 
 
+# ── Access logs by ip ────────────────────────────────────────────────────────
+
+
+@router.get("/htmx/access-logs")
+async def htmx_access_logs_by_ip(
+    request: Request,
+    page: int = Query(1),
+    sort_by: str = Query("total_requests"),
+    sort_order: str = Query("desc"),
+    ip_filter: str = Query("ip_filter"),
+):
+    db = get_db()
+    result = db.get_access_logs_paginated(
+        page=max(1, page),page_size=25, ip_filter=ip_filter
+    )
+
+    # Normalize pagination key (DB returns total_attackers, template expects total)
+    pagination = result["pagination"]
+    if "total_access_logs" in pagination and "total" not in pagination:
+        pagination["total"] = pagination["total_access_logs"]
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        "dashboard/partials/access_by_ip_table.html",
+        {
+            "request": request,
+            "dashboard_path": _dashboard_path(request),
+            "items": result["access_logs"],
+            "pagination": pagination,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "ip_filter": ip_filter,
+        },
+    )
+
+
 # ── Credentials ──────────────────────────────────────────────────────
 
 
