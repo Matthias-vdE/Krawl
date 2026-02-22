@@ -790,19 +790,66 @@ class DatabaseManager:
 
     def get_ips_needing_reevaluation(self) -> List[str]:
         """
-        Get all IP addresses that have been flagged for reevaluation.
+        Get all IP addresses that need evaluation.
 
         Returns:
             List of IP addresses where need_reevaluation is True
+            or that have never been analyzed (last_analysis is NULL)
         """
         session = self.session
         try:
             ips = (
                 session.query(IpStats.ip)
-                .filter(IpStats.need_reevaluation == True)
+                .filter(
+                    or_(
+                        IpStats.need_reevaluation == True,
+                        IpStats.last_analysis.is_(None),
+                    )
+                )
                 .all()
             )
             return [ip[0] for ip in ips]
+        finally:
+            self.close_session()
+
+    def flag_stale_ips_for_reevaluation(self) -> int:
+        """
+        Flag IPs for reevaluation where:
+        - last_seen is between 15 and 30 days ago
+        - last_analysis is more than 10 days ago (or never analyzed)
+
+        Returns:
+            Number of IPs flagged for reevaluation
+        """
+        session = self.session
+        try:
+            now = datetime.now()
+            last_seen_lower = now - timedelta(days=30)
+            last_seen_upper = now - timedelta(days=15)
+            last_analysis_cutoff = now - timedelta(days=10)
+
+            count = (
+                session.query(IpStats)
+                .filter(
+                    IpStats.last_seen >= last_seen_lower,
+                    IpStats.last_seen <= last_seen_upper,
+                    or_(
+                        IpStats.last_analysis <= last_analysis_cutoff,
+                        IpStats.last_analysis.is_(None),
+                    ),
+                    IpStats.need_reevaluation == False,
+                    IpStats.manual_category == False,
+                )
+                .update(
+                    {IpStats.need_reevaluation: True},
+                    synchronize_session=False,
+                )
+            )
+            session.commit()
+            return count
+        except Exception as e:
+            session.rollback()
+            raise
         finally:
             self.close_session()
 

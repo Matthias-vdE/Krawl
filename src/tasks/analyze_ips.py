@@ -1,3 +1,4 @@
+from collections import Counter
 from database import get_database
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -94,6 +95,19 @@ def main():
             "attack_url": 0,
         },
     }
+    # Parse robots.txt once before the loop (it never changes during a run)
+    robots_disallows = []
+    robots_path = Path(__file__).parent.parent / "templates" / "html" / "robots.txt"
+    with open(robots_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(":")
+            if parts[0] == "Disallow":
+                parts[1] = parts[1].rstrip("/")
+                robots_disallows.append(parts[1].strip())
+
     # Get IPs flagged for reevaluation (set when a suspicious request arrives)
     ips_to_analyze = set(db_manager.get_ips_needing_reevaluation())
 
@@ -105,41 +119,21 @@ def main():
 
     for ip in ips_to_analyze:
         # Get full history for this IP to perform accurate analysis
-        ip_accesses = db_manager.get_access_logs(limit=999999999, ip_filter=ip)
+        ip_accesses = db_manager.get_access_logs(
+            limit=10000, ip_filter=ip, since_minutes=1440 * 30
+        )  # look back up to 30 days of history for better accuracy
         total_accesses_count = len(ip_accesses)
         if total_accesses_count <= 0:
             continue
 
         # --------------------- HTTP Methods ---------------------
-        get_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "GET"]
-        )
-        post_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "POST"]
-        )
-        put_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "PUT"]
-        )
-        delete_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "DELETE"]
-        )
-        head_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "HEAD"]
-        )
-        options_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "OPTIONS"]
-        )
-        patch_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "PATCH"]
-        )
+        method_counts = Counter(item["method"] for item in ip_accesses)
         if total_accesses_count > http_risky_methods_threshold:
-            http_method_attacker_score = (
-                post_accesses_count
-                + put_accesses_count
-                + delete_accesses_count
-                + options_accesses_count
-                + patch_accesses_count
-            ) / total_accesses_count
+            risky_count = sum(
+                method_counts.get(m, 0)
+                for m in ("POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+            )
+            http_method_attacker_score = risky_count / total_accesses_count
         else:
             http_method_attacker_score = 0
         # print(f"HTTP Method attacker score: {http_method_attacker_score}")
@@ -154,21 +148,6 @@ def main():
             score["bad_crawler"]["risky_http_methods"] = False
             score["regular_user"]["risky_http_methods"] = False
         # --------------------- Robots Violations ---------------------
-        # respect robots.txt and login/config pages access frequency
-        robots_disallows = []
-        robots_path = Path(__file__).parent.parent / "templates" / "html" / "robots.txt"
-        with open(robots_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split(":")
-
-                if parts[0] == "Disallow":
-                    parts[1] = parts[1].rstrip("/")
-                    # print(f"DISALLOW {parts[1]}")
-                    robots_disallows.append(parts[1].strip())
-        # if 0 100% sure is good crawler, if >10% of robots violated is bad crawler or attacker
         violated_robots_count = len(
             [
                 item
