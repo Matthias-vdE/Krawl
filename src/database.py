@@ -812,6 +812,47 @@ class DatabaseManager:
         finally:
             self.close_session()
 
+    def flag_stale_ips_for_reevaluation(self) -> int:
+        """
+        Flag IPs for reevaluation where:
+        - last_seen is between 15 and 30 days ago
+        - last_analysis is more than 10 days ago (or never analyzed)
+
+        Returns:
+            Number of IPs flagged for reevaluation
+        """
+        session = self.session
+        try:
+            now = datetime.now()
+            last_seen_lower = now - timedelta(days=30)
+            last_seen_upper = now - timedelta(days=15)
+            last_analysis_cutoff = now - timedelta(days=10)
+
+            count = (
+                session.query(IpStats)
+                .filter(
+                    IpStats.last_seen >= last_seen_lower,
+                    IpStats.last_seen <= last_seen_upper,
+                    or_(
+                        IpStats.last_analysis <= last_analysis_cutoff,
+                        IpStats.last_analysis.is_(None),
+                    ),
+                    IpStats.need_reevaluation == False,
+                    IpStats.manual_category == False,
+                )
+                .update(
+                    {IpStats.need_reevaluation: True},
+                    synchronize_session=False,
+                )
+            )
+            session.commit()
+            return count
+        except Exception as e:
+            session.rollback()
+            raise
+        finally:
+            self.close_session()
+
     def get_access_logs(
         self,
         limit: int = 100,
