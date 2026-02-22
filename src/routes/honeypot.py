@@ -398,6 +398,10 @@ async def trap_page(request: Request, path: str):
         access_logger.warning(
             f"[SUSPICIOUS] {client_ip} - {user_agent[:50]} - {full_path}"
         )
+    else:
+        access_logger.info(
+            f"[REQUEST] {client_ip} - {full_path}"
+        )
 
     # Record access unless the router dependency already handled it
     # (attack pattern or honeypot path → already recorded by _track_honeypot_request)
