@@ -200,6 +200,9 @@ class IpStats(Base):
     category_scores: Mapped[Dict[str, int]] = mapped_column(JSON, nullable=True)
     manual_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
     last_analysis: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    need_reevaluation: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=True
+    )
 
     def __repr__(self) -> str:
         return f"<IpStats(ip='{self.ip}', total_requests={self.total_requests})>"

@@ -261,7 +261,7 @@ class DatabaseManager:
                     session.add(detection)
 
             # Update IP stats
-            self._update_ip_stats(session, ip)
+            self._update_ip_stats(session, ip, is_suspicious)
 
             session.commit()
             return access_log.id
@@ -313,13 +313,16 @@ class DatabaseManager:
         finally:
             self.close_session()
 
-    def _update_ip_stats(self, session: Session, ip: str) -> None:
+    def _update_ip_stats(
+        self, session: Session, ip: str, is_suspicious: bool = False
+    ) -> None:
         """
         Update IP statistics (upsert pattern).
 
         Args:
             session: Active database session
             ip: IP address to update
+            is_suspicious: Whether the request was flagged as suspicious
         """
         sanitized_ip = sanitize_ip(ip)
         now = datetime.now()
@@ -329,9 +332,15 @@ class DatabaseManager:
         if ip_stats:
             ip_stats.total_requests += 1
             ip_stats.last_seen = now
+            if is_suspicious:
+                ip_stats.need_reevaluation = True
         else:
             ip_stats = IpStats(
-                ip=sanitized_ip, total_requests=1, first_seen=now, last_seen=now
+                ip=sanitized_ip,
+                total_requests=1,
+                first_seen=now,
+                last_seen=now,
+                need_reevaluation=is_suspicious,
             )
             session.add(ip_stats)
 
@@ -385,6 +394,7 @@ class DatabaseManager:
         ip_stats.category = category
         ip_stats.category_scores = category_scores
         ip_stats.last_analysis = last_analysis
+        ip_stats.need_reevaluation = False
 
         try:
             session.commit()
@@ -633,6 +643,24 @@ class DatabaseManager:
                 else:
                     raise
 
+            return [ip[0] for ip in ips]
+        finally:
+            self.close_session()
+
+    def get_ips_needing_reevaluation(self) -> List[str]:
+        """
+        Get all IP addresses that have been flagged for reevaluation.
+
+        Returns:
+            List of IP addresses where need_reevaluation is True
+        """
+        session = self.session
+        try:
+            ips = (
+                session.query(IpStats.ip)
+                .filter(IpStats.need_reevaluation == True)
+                .all()
+            )
             return [ip[0] for ip in ips]
         finally:
             self.close_session()

@@ -38,6 +38,16 @@ def _migrate_raw_request_column(cursor) -> bool:
     return True
 
 
+def _migrate_need_reevaluation_column(cursor) -> bool:
+    """Add need_reevaluation column to ip_stats if missing."""
+    if _column_exists(cursor, "ip_stats", "need_reevaluation"):
+        return False
+    cursor.execute(
+        "ALTER TABLE ip_stats ADD COLUMN need_reevaluation BOOLEAN DEFAULT 0"
+    )
+    return True
+
+
 def _migrate_performance_indexes(cursor) -> List[str]:
     """Add performance indexes to attack_detections if missing."""
     added = []
@@ -76,6 +86,9 @@ def run_migrations(database_path: str) -> None:
 
         if _migrate_raw_request_column(cursor):
             applied.append("add raw_request column to access_logs")
+
+        if _migrate_need_reevaluation_column(cursor):
+            applied.append("add need_reevaluation column to ip_stats")
 
         idx_added = _migrate_performance_indexes(cursor)
         for idx in idx_added:
