@@ -48,23 +48,11 @@
                     </div>
 
                     <div class="ip-info-section">
-                        <h3>Location</h3>
-                        {% if stats.city %}
+                        <h3>Geo & Network</h3>
+                        {% if stats.city or stats.country %}
                         <div class="stat-row">
-                            <span class="stat-label-sm">City:</span>
-                            <span class="stat-value-sm">{{ stats.city | e }}</span>
-                        </div>
-                        {% endif %}
-                        {% if stats.region_name %}
-                        <div class="stat-row">
-                            <span class="stat-label-sm">Region:</span>
-                            <span class="stat-value-sm">{{ stats.region_name | e }}</span>
-                        </div>
-                        {% endif %}
-                        {% if stats.country %}
-                        <div class="stat-row">
-                            <span class="stat-label-sm">Country:</span>
-                            <span class="stat-value-sm">{{ stats.country | e }} ({{ stats.country_code | default('') | e }})</span>
+                            <span class="stat-label-sm">Location:</span>
+                            <span class="stat-value-sm">{{ stats.city | default('') | e }}{% if stats.city and stats.country %}, {% endif %}{{ stats.country | default(stats.country_code | default('')) | e }}</span>
                         </div>
                         {% endif %}
                         {% if stats.timezone %}
@@ -73,10 +61,6 @@
                             <span class="stat-value-sm">{{ stats.timezone | e }}</span>
                         </div>
                         {% endif %}
-                    </div>
-
-                    <div class="ip-info-section">
-                        <h3>Network</h3>
                         {% if stats.isp %}
                         <div class="stat-row">
                             <span class="stat-label-sm">ISP:</span>
@@ -104,7 +88,7 @@
                     </div>
 
                     <div class="ip-info-section">
-                        <h3>Flags & Reputation</h3>
+                        <h3>Reputation</h3>
                         {% set flags = [] %}
                         {% if stats.is_proxy %}{% set _ = flags.append('Proxy') %}{% endif %}
                         {% if stats.is_hosting %}{% set _ = flags.append('Hosting') %}{% endif %}
@@ -120,16 +104,16 @@
                         {% endif %}
                         {% if stats.reputation_score is not none %}
                         <div class="stat-row">
-                            <span class="stat-label-sm">Reputation:</span>
+                            <span class="stat-label-sm">Score:</span>
                             <span class="stat-value-sm reputation-score {% if stats.reputation_score <= 30 %}bad{% elif stats.reputation_score <= 60 %}medium{% else %}good{% endif %}">
                                 {{ stats.reputation_score }}/100
                             </span>
                         </div>
                         {% endif %}
                         {% if stats.blocklist_memberships %}
-                        <div class="stat-row" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+                        <div class="stat-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
                             <span class="stat-label-sm">Listed On:</span>
-                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            <div class="blocklist-badges">
                                 {% for bl in stats.blocklist_memberships %}
                                 <span class="reputation-badge">{{ bl | e }}</span>
                                 {% endfor %}
@@ -163,7 +147,7 @@
             {% if stats.category_history %}
             <div class="table-container">
                 <h2>Behavior Timeline</h2>
-                <div class="timeline">
+                <div class="timeline ip-timeline-scroll">
                     {% for entry in stats.category_history %}
                     <div class="timeline-item">
                         <div class="timeline-marker {{ entry.new_category | default('unknown') | replace('_', '-') }}"></div>
@@ -208,7 +192,7 @@
     const scores = {{ stats.category_scores | tojson }};
     const container = document.getElementById('insight-radar-chart');
     if (container && typeof generateRadarChart === 'function') {
-        container.innerHTML = generateRadarChart(scores, 220, true);
+        container.innerHTML = generateRadarChart(scores, 220, true, 'side');
     }
     {% endif %}
 

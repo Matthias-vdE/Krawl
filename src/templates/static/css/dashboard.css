@@ -274,14 +274,15 @@ tbody {
     overflow: visible;
 }
 .radar-legend {
-    margin-top: 10px;
+    margin-top: 0;
     font-size: 11px;
+    flex-shrink: 0;
 }
 .radar-legend-item {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin: 3px 0;
+    margin: 4px 0;
 }
 .radar-legend-color {
     width: 12px;
@@ -445,6 +446,119 @@ tbody {
 .timeline-marker.bad-crawler { background: #f0883e; }
 .timeline-marker.regular-user { background: #58a6ff; }
 .timeline-marker.unknown { background: #8b949e; }
+
+/* ── IP Insight Page Layout ─────────────────────── */
+.ip-insight-content {
+    animation: fadeIn 0.3s ease-in;
+}
+.ip-page-header {
+    margin-bottom: 24px;
+}
+.ip-page-header h1 {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 4px 0;
+}
+.ip-address-title {
+    font-size: 28px;
+    font-weight: 700;
+    color: #e6edf3;
+    font-family: monospace;
+}
+.ip-location-subtitle {
+    color: #8b949e;
+    font-size: 14px;
+    margin: 4px 0 0 0;
+}
+.ip-page-grid {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 20px;
+    align-items: start;
+}
+.ip-page-left,
+.ip-page-right {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.ip-info-card h2 {
+    margin-top: 0;
+}
+.ip-info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+}
+.ip-info-section {
+    padding: 14px 16px;
+    border-right: 1px solid #21262d;
+}
+.ip-info-section:last-child {
+    border-right: none;
+}
+.ip-info-section h3 {
+    color: #58a6ff;
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #21262d;
+}
+.ip-info-section .stat-row {
+    padding: 3px 0;
+    font-size: 13px;
+}
+.blocklist-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    max-height: 120px;
+    overflow-y: auto;
+}
+.ip-flag {
+    display: inline-block;
+    background: #1c2128;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    color: #f0883e;
+    margin-right: 4px;
+}
+.reputation-score {
+    font-weight: 700;
+}
+.reputation-score.bad { color: #f85149; }
+.reputation-score.medium { color: #f0883e; }
+.reputation-score.good { color: #3fb950; }
+.radar-chart-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0;
+}
+.ip-timeline-scroll {
+    max-height: 280px;
+    overflow-y: auto;
+}
+@media (max-width: 900px) {
+    .ip-page-grid {
+        grid-template-columns: 1fr;
+    }
+    .ip-info-grid {
+        grid-template-columns: 1fr;
+    }
+    .ip-info-section {
+        border-right: none;
+        border-bottom: 1px solid #21262d;
+    }
+    .ip-info-section:last-child {
+        border-bottom: none;
+    }
+}
+
 .tabs-container {
     border-bottom: 1px solid #30363d;
     margin-bottom: 30px;
@@ -1222,6 +1336,27 @@ tbody {
     background: #30363d;
     border-color: #58a6ff;
 }
+.inspect-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    background: none;
+    border: none;
+    color: #8b949e;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+}
+.inspect-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: currentColor;
+}
+.inspect-btn:hover {
+    color: #58a6ff;
+    background: rgba(88, 166, 255, 0.1);
+}
 .pagination-btn {
     padding: 6px 14px;
     background: #21262d;
@@ -1313,12 +1448,15 @@ tbody {
 .search-spinner {
     position: absolute;
     right: 14px;
-    font-size: 18px;
-    color: #58a6ff;
-    animation: spin 0.8s linear infinite;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 2px solid #30363d;
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
 }
 @keyframes spin {
-    from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
 
