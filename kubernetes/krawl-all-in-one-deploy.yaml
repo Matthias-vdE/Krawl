@@ -154,6 +154,8 @@ metadata:
     app.kubernetes.io/version: "1.0.0"
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: krawl

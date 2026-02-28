@@ -36,14 +36,45 @@ function createClusterIcon(cluster) {
         gradientStops.push(`${color} ${start.toFixed(1)}deg ${end.toFixed(1)}deg`);
     });
 
-    const size = Math.max(32, Math.min(50, 32 + Math.log2(total) * 5));
-    const inner = size - 10;
-    const offset = 5; // (size - inner) / 2
+    const size = Math.max(20, Math.min(44, 20 + Math.log2(total) * 4));
+    const centerSize = size - 8;
+    const centerOffset = 4;
+    const ringWidth = 4;
+    const radius = (size / 2) - (ringWidth / 2);
+    const cx = size / 2;
+    const cy = size / 2;
+    const gapDeg = 8;
+
+    // Build SVG arc segments with gaps - glow layer first, then sharp layer
+    let glowSegments = '';
+    let segments = '';
+    let currentAngle = -90;
+    sorted.forEach(([cat, count], idx) => {
+        const sliceDeg = (count / total) * 360;
+        if (sliceDeg < gapDeg) return;
+        const startAngle = currentAngle + (gapDeg / 2);
+        const endAngle = currentAngle + sliceDeg - (gapDeg / 2);
+        const startRad = (startAngle * Math.PI) / 180;
+        const endRad = (endAngle * Math.PI) / 180;
+        const x1 = cx + radius * Math.cos(startRad);
+        const y1 = cy + radius * Math.sin(startRad);
+        const x2 = cx + radius * Math.cos(endRad);
+        const y2 = cy + radius * Math.sin(endRad);
+        const largeArc = (endAngle - startAngle) > 180 ? 1 : 0;
+        const color = categoryColors[cat] || '#8b949e';
+        // Glow layer - subtle
+        glowSegments += `<path d="M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="${ringWidth + 4}" stroke-linecap="round" opacity="0.35" filter="url(#glow)"/>`;
+        // Sharp layer
+        segments += `<path d="M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}" fill="none" stroke="${color}" stroke-width="${ringWidth}" stroke-linecap="round"/>`;
+        currentAngle += sliceDeg;
+    });
 
     return L.divIcon({
         html: `<div style="position:relative;width:${size}px;height:${size}px;">` +
-            `<div style="position:absolute;top:0;left:0;width:${size}px;height:${size}px;border-radius:50%;background:conic-gradient(${gradientStops.join(', ')});box-shadow:0 0 6px rgba(0,0,0,0.5);"></div>` +
-            `<div style="position:absolute;top:${offset}px;left:${offset}px;width:${inner}px;height:${inner}px;border-radius:50%;background:rgba(13,17,23,0.85);color:#e6edf3;font-size:11px;font-weight:700;line-height:${inner}px;text-align:center;">${total}</div>` +
+            `<svg width="${size}" height="${size}" style="position:absolute;top:0;left:0;overflow:visible;">` +
+            `<defs><filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2" result="blur"/></filter></defs>` +
+            `${glowSegments}${segments}</svg>` +
+            `<div style="position:absolute;top:${centerOffset}px;left:${centerOffset}px;width:${centerSize}px;height:${centerSize}px;border-radius:50%;background:#0d1117;display:flex;align-items:center;justify-content:center;color:#e6edf3;font-family:'SF Mono',Monaco,Consolas,monospace;font-size:${Math.max(9, centerSize * 0.38)}px;font-weight:600;">${total}</div>` +
             `</div>`,
         className: 'ip-cluster-icon',
         iconSize: L.point(size, size)
@@ -180,11 +211,11 @@ function buildMapMarkers(ips) {
 
     // Single cluster group with custom pie-chart icons
     clusterGroup = L.markerClusterGroup({
-        maxClusterRadius: 20,
+        maxClusterRadius: 35,
         spiderfyOnMaxZoom: true,
         showCoverageOnHover: false,
         zoomToBoundsOnClick: true,
-        disableClusteringAtZoom: 10,
+        disableClusteringAtZoom: 8,
         iconCreateFunction: createClusterIcon
     });
 
@@ -309,6 +340,15 @@ function buildMapMarkers(ips) {
                     `;
                 }
 
+                // Add inspect button
+                popupContent += `
+                    <div style="margin-top: 12px; border-top: 1px solid #30363d; padding-top: 12px; text-align: center;">
+                        <button onclick="window.openIpInsight('${ip.ip}')" class="inspect-btn" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; background: #21262d; color: #58a6ff; border: 1px solid #30363d; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
+                        </button>
+                    </div>
+                `;
+
                 popupContent += '</div>';
                 marker.setPopupContent(popupContent);
             } catch (err) {
@@ -331,6 +371,11 @@ function buildMapMarkers(ips) {
                         </div>
                         <div style="margin-top: 12px; border-top: 1px solid #30363d; padding-top: 12px; text-align: center; color: #f85149; font-size: 11px;">
                             Failed to load chart: ${err.message}
+                        </div>
+                        <div style="margin-top: 12px; text-align: center;">
+                            <button onclick="window.openIpInsight('${ip.ip}')" class="inspect-btn" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; background: #21262d; color: #58a6ff; border: 1px solid #30363d; border-radius: 4px; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s;">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z"/></svg>
+                            </button>
                         </div>
                     </div>
                 `;
