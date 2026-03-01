@@ -26,6 +26,14 @@ data:
       token_tries: 10
     dashboard:
       secret_path: null
+    backups:
+      path: "backups"
+      cron: "*/30 * * * *"
+      enabled: false
+    exports:
+      path: "exports"
+    logging:
+      level: "INFO"
     database:
       path: "data/krawl.db"
       retention_days: 30

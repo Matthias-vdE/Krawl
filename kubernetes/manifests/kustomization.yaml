@@ -10,6 +10,5 @@ resources:
   - service.yaml
   - network-policy.yaml
   - ingress.yaml
-  - hpa.yaml
 
 namespace: krawl-system

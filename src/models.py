@@ -63,6 +63,8 @@ class AccessLog(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.utcnow, index=True
     )
+    # Raw HTTP request for forensic analysis (nullable for backward compatibility)
+    raw_request: Mapped[Optional[str]] = mapped_column(String, nullable=True)
 
     # Relationship to attack detections
     attack_detections: Mapped[List["AttackDetection"]] = relationship(
@@ -126,7 +128,7 @@ class AttackDetection(Base):
         nullable=False,
         index=True,
     )
-    attack_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    attack_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     matched_pattern: Mapped[Optional[str]] = mapped_column(
         String(MAX_ATTACK_PATTERN_LENGTH), nullable=True
     )
@@ -134,6 +136,11 @@ class AttackDetection(Base):
     # Relationship back to access log
     access_log: Mapped["AccessLog"] = relationship(
         "AccessLog", back_populates="attack_detections"
+    )
+
+    # Composite index for efficient aggregation queries
+    __table_args__ = (
+        Index("ix_attack_detections_type_log", "attack_type", "access_log_id"),
     )
 
     def __repr__(self) -> str:
@@ -162,12 +169,20 @@ class IpStats(Base):
     # GeoIP fields (populated by future enrichment)
     country_code: Mapped[Optional[str]] = mapped_column(String(2), nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String(MAX_CITY_LENGTH), nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    region: Mapped[Optional[str]] = mapped_column(String(2), nullable=True)
+    region_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    timezone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    isp: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    reverse: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     latitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     longitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     asn: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     asn_org: Mapped[Optional[str]] = mapped_column(
         String(MAX_ASN_ORG_LENGTH), nullable=True
     )
+    is_proxy: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    is_hosting: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     list_on: Mapped[Optional[Dict[str, str]]] = mapped_column(JSON, nullable=True)
 
     # Reputation fields (populated by future enrichment)
@@ -185,6 +200,15 @@ class IpStats(Base):
     category_scores: Mapped[Dict[str, int]] = mapped_column(JSON, nullable=True)
     manual_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
     last_analysis: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+    need_reevaluation: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=True
+    )
+
+    # Ban/rate-limit state (moved from in-memory tracker to DB)
+    page_visit_count: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
+    ban_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    total_violations: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
+    ban_multiplier: Mapped[int] = mapped_column(Integer, default=1, nullable=True)
 
     def __repr__(self) -> str:
         return f"<IpStats(ip='{self.ip}', total_requests={self.total_requests})>"

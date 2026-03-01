@@ -68,6 +68,14 @@ data:
       token_tries: 10
     dashboard:
       secret_path: null
+    backups:
+      path: "backups"
+      cron: "*/30 * * * *"
+      enabled: false
+    exports:
+      path: "exports"
+    logging:
+      level: "INFO"
     database:
       path: "data/krawl.db"
       retention_days: 30
@@ -154,6 +162,8 @@ metadata:
     app.kubernetes.io/version: "1.0.0"
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: krawl

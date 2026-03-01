@@ -10,103 +10,31 @@ A Helm chart for deploying the Krawl honeypot application on Kubernetes.
 
 ## Installation
 
-
-### Helm Chart
-
-Install with default values:
+### From OCI Registry
 
 ```bash
 helm install krawl oci://ghcr.io/blessedrebus/krawl-chart \
-  --version 1.0.0 \
-  --namespace krawl-system \
-  --create-namespace
-```
-
-Or create a minimal `values.yaml` file:
-
-```yaml
-service:
-  type: LoadBalancer
-  port: 5000
-
-timezone: "Europe/Rome"
-
-ingress:
-  enabled: true
-  className: "traefik"
-  hosts:
-    - host: krawl.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-
-config:
-  server:
-    port: 5000
-    delay: 100
-  dashboard:
-    secret_path: null  # Auto-generated if not set
-
-database:
-  persistence:
-    enabled: true
-    size: 1Gi
-```
-
-Install with custom values:
-
-```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart \
-  --version 0.2.2 \
+  --version 1.1.0 \
   --namespace krawl-system \
   --create-namespace \
-  -f values.yaml
+  -f values.yaml  # optional
 ```
 
-To access the deception server:
+### From local chart
+
+```bash
+helm install krawl ./helm -n krawl-system --create-namespace -f values.yaml
+```
+
+A minimal [values.yaml](values-minimal.yaml) example is provided in this directory.
+
+Once installed, get your service IP:
 
 ```bash
 kubectl get svc krawl -n krawl-system
 ```
 
-Once the EXTERNAL-IP is assigned, access your deception server at `http://<EXTERNAL-IP>:5000`
-
-### Add the repository (if applicable)
-
-```bash
-helm repo add krawl https://github.com/BlessedRebuS/Krawl
-helm repo update
-```
-
-### Install from OCI Registry
-
-```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 0.2.1
-```
-
-Or with a specific namespace:
-
-```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 0.2.1 -n krawl --create-namespace
-```
-
-### Install the chart locally
-
-```bash
-helm install krawl ./helm
-```
-
-### Install with custom values
-
-```bash
-helm install krawl ./helm -f values.yaml
-```
-
-### Install in a specific namespace
-
-```bash
-helm install krawl ./helm -n krawl --create-namespace
-```
+Then access the deception server at `http://<EXTERNAL-IP>:5000`
 
 ## Configuration
 
@@ -221,16 +149,6 @@ The following table lists the main configuration parameters of the Krawl chart a
 | `resources.requests.cpu` | CPU request | `100m` |
 | `resources.requests.memory` | Memory request | `64Mi` |
 
-### Autoscaling
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `autoscaling.enabled` | Enable horizontal pod autoscaling | `false` |
-| `autoscaling.minReplicas` | Minimum replicas | `1` |
-| `autoscaling.maxReplicas` | Maximum replicas | `1` |
-| `autoscaling.targetCPUUtilizationPercentage` | Target CPU utilization | `70` |
-| `autoscaling.targetMemoryUtilizationPercentage` | Target memory utilization | `80` |
-
 ### Network Policy
 
 | Parameter | Description | Default |
@@ -248,68 +166,24 @@ kubectl get secret krawl-server -n krawl-system \
 
 ## Usage Examples
 
-### Basic Installation
+You can override individual values with `--set` without a values file:
 
 ```bash
-helm install krawl ./helm
-```
-
-### Installation with Custom Domain
-
-```bash
-helm install krawl ./helm \
-  --set ingress.hosts[0].host=honeypot.example.com
-```
-
-### Enable Canary Tokens
-
-```bash
-helm install krawl ./helm \
+helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.1.0 \
+  --set ingress.hosts[0].host=honeypot.example.com \
   --set config.canary.token_url=https://canarytokens.com/your-token
-```
-
-### Configure Custom API Endpoint
-
-```bash
-helm install krawl ./helm \
-  --set config.api.server_url=https://api.example.com \
-  --set config.api.server_port=443
-```
-
-### Create Values Override File
-
-Create `custom-values.yaml`:
-
-```yaml
-config:
-  server:
-    port: 8080
-    delay: 500
-  canary:
-    token_url: https://your-canary-token-url
-  dashboard:
-    secret_path: /super-secret-path
-  crawl:
-    max_pages_limit: 500
-    ban_duration_seconds: 3600
-```
-
-Then install:
-
-```bash
-helm install krawl ./helm -f custom-values.yaml
 ```
 
 ## Upgrading
 
 ```bash
-helm upgrade krawl ./helm
+helm upgrade krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.1.0 -f values.yaml
 ```
 
 ## Uninstalling
 
 ```bash
-helm uninstall krawl
+helm uninstall krawl -n krawl-system
 ```
 
 ## Troubleshooting
@@ -348,7 +222,6 @@ kubectl logs -l app.kubernetes.io/name=krawl
   - `configmap.yaml` - Application configuration
   - `pvc.yaml` - Persistent volume claim
   - `ingress.yaml` - Ingress configuration
-  - `hpa.yaml` - Horizontal pod autoscaler
   - `network-policy.yaml` - Network policies
 
 ## Support

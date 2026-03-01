@@ -68,6 +68,7 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+backups/
 
 # Temporary files
 *.tmp
@@ -81,3 +82,6 @@ personal-values.yaml
 #exports dir (keeping .gitkeep so we have the dir)
 /exports/*
 /src/exports/*
+
+# tmux config
+.tmux.conf

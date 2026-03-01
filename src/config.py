@@ -37,6 +37,13 @@ class Config:
     infinite_pages_for_malicious: bool = True  # Infinite pages for malicious crawlers
     ban_duration_seconds: int = 600  # Ban duration in seconds for IPs exceeding limits
 
+    # exporter settings
+    exports_path: str = "exports"
+
+    # backup job settings
+    backups_path: str = "backups"
+    backups_enabled: bool = False
+    backups_cron: str = "*/30 * * * *"
     # Database settings
     database_path: str = "data/krawl.db"
     database_retention_days: int = 30
@@ -48,6 +55,8 @@ class Config:
     uneven_request_timing_time_window_seconds: float = None
     user_agents_used_threshold: float = None
     attack_urls_threshold: float = None
+
+    log_level: str = "INFO"
 
     _server_ip: Optional[str] = None
     _server_ip_cache_time: float = 0
@@ -85,7 +94,7 @@ class Config:
                         ip = response.text.strip()
                         if ip:
                             break
-                except Exception:
+                except requests.RequestException:
                     continue
 
             if not ip:
@@ -150,10 +159,13 @@ class Config:
         canary = data.get("canary", {})
         dashboard = data.get("dashboard", {})
         api = data.get("api", {})
+        exports = data.get("exports", {})
+        backups = data.get("backups", {})
         database = data.get("database", {})
         behavior = data.get("behavior", {})
         analyzer = data.get("analyzer") or {}
         crawl = data.get("crawl", {})
+        logging_cfg = data.get("logging", {})
 
         # Handle dashboard_secret_path - auto-generate if null/not set
         dashboard_path = dashboard.get("secret_path")
@@ -185,6 +197,10 @@ class Config:
             canary_token_tries=canary.get("token_tries", 10),
             dashboard_secret_path=dashboard_path,
             probability_error_codes=behavior.get("probability_error_codes", 0),
+            exports_path=exports.get("path", "exports"),
+            backups_path=backups.get("path", "backups"),
+            backups_enabled=backups.get("enabled", False),
+            backups_cron=backups.get("cron"),
             database_path=database.get("path", "data/krawl.db"),
             database_retention_days=database.get("retention_days", 30),
             http_risky_methods_threshold=analyzer.get(
@@ -204,6 +220,9 @@ class Config:
             ),
             max_pages_limit=crawl.get("max_pages_limit", 250),
             ban_duration_seconds=crawl.get("ban_duration_seconds", 600),
+            log_level=os.getenv(
+                "KRAWL_LOG_LEVEL", logging_cfg.get("level", "INFO")
+            ).upper(),
         )
 
 

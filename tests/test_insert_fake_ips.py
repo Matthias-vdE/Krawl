@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from database import get_database
 from logger import get_app_logger
-from geo_utils import extract_city_from_coordinates
+from geo_utils import extract_geolocation_from_ip
 
 # ----------------------
 # TEST DATA GENERATORS
@@ -44,6 +44,12 @@ from geo_utils import extract_city_from_coordinates
 # Fake IPs for testing - geolocation data will be fetched from API
 # These are real public IPs from various locations around the world
 FAKE_IPS = [
+    # VPN
+    "31.13.189.236",
+    "37.120.215.246",
+    "37.120.215.247",
+    "37.120.215.248",
+    "37.120.215.249",
     # United States
     "45.142.120.10",
     "107.189.10.143",
@@ -226,8 +232,7 @@ def cleanup_database(db_manager, app_logger):
 
 def fetch_geolocation_from_api(ip: str, app_logger) -> tuple:
     """
-    Fetch geolocation data from the IP reputation API.
-    Uses the most recent result and extracts city from coordinates.
+    Fetch geolocation data using ip-api.com.
 
     Args:
         ip: IP address to lookup
@@ -237,28 +242,15 @@ def fetch_geolocation_from_api(ip: str, app_logger) -> tuple:
         Tuple of (country_code, city, asn, asn_org) or None if failed
     """
     try:
-        api_url = "https://iprep.lcrawl.com/api/iprep/"
-        params = {"cidr": ip}
-        headers = {"Content-Type": "application/json"}
-        response = requests.get(api_url, headers=headers, params=params, timeout=10)
+        geoloc_data = extract_geolocation_from_ip(ip)
 
-        if response.status_code == 200:
-            payload = response.json()
-            if payload.get("results"):
-                results = payload["results"]
+        if geoloc_data:
+            country_code = geoloc_data.get("country_code")
+            city = geoloc_data.get("city")
+            asn = geoloc_data.get("asn")
+            asn_org = geoloc_data.get("org")
 
-                # Get the most recent result (first in list, sorted by record_added)
-                most_recent = results[0]
-                geoip_data = most_recent.get("geoip_data", {})
-
-                country_code = geoip_data.get("country_iso_code")
-                asn = geoip_data.get("asn_autonomous_system_number")
-                asn_org = geoip_data.get("asn_autonomous_system_organization")
-
-                # Extract city from coordinates using reverse geocoding
-                city = extract_city_from_coordinates(geoip_data)
-
-                return (country_code, city, asn, asn_org)
+            return (country_code, city, asn, asn_org)
     except requests.RequestException as e:
         app_logger.warning(f"Failed to fetch geolocation for {ip}: {e}")
     except Exception as e:
@@ -313,9 +305,9 @@ def generate_fake_data(
     request_counts = []
     for i in range(len(selected_ips)):
         if i < len(selected_ips) // 5:  # 20% high-traffic IPs
-            count = random.randint(1000, 10000)
-        elif i < len(selected_ips) // 2:  # 30% medium-traffic IPs
             count = random.randint(100, 1000)
+        elif i < len(selected_ips) // 2:  # 30% medium-traffic IPs
+            count = random.randint(10, 100)
         else:  # 50% low-traffic IPs
             count = random.randint(5, 100)
         request_counts.append(count)
@@ -549,19 +541,20 @@ def generate_fake_data(
     app_logger.info(
         "All IPs have API-fetched geolocation with reverse geocoded city names."
     )
-    app_logger.info("Run: python server.py")
+    app_logger.info("Run: uvicorn app:app --app-dir src")
     app_logger.info("=" * 60)
 
 
 if __name__ == "__main__":
     import sys
 
-    # Allow command-line arguments for customization
-    num_ips = int(sys.argv[1]) if len(sys.argv) > 1 else 20
-    logs_per_ip = int(sys.argv[2]) if len(sys.argv) > 2 else 15
-    credentials_per_ip = int(sys.argv[3]) if len(sys.argv) > 3 else 3
     # Add --no-cleanup flag to skip database cleanup
     cleanup = "--no-cleanup" not in sys.argv
+    # Filter out flags before parsing positional args
+    positional = [a for a in sys.argv[1:] if not a.startswith("--")]
+    num_ips = int(positional[0]) if len(positional) > 0 else 20
+    logs_per_ip = int(positional[1]) if len(positional) > 1 else 15
+    credentials_per_ip = int(positional[2]) if len(positional) > 2 else 3
 
     generate_fake_data(
         num_ips,

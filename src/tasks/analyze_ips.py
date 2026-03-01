@@ -1,7 +1,5 @@
-from sqlalchemy import select
-from typing import Optional
-from database import get_database, DatabaseManager
-from zoneinfo import ZoneInfo
+from collections import Counter
+from database import get_database
 from pathlib import Path
 from datetime import datetime, timedelta
 import re
@@ -9,8 +7,6 @@ import urllib.parse
 from wordlists import get_wordlists
 from config import get_config
 from logger import get_app_logger
-import requests
-from sanitizer import sanitize_for_storage, sanitize_dict
 
 # ----------------------
 # TASK CONFIG
@@ -74,7 +70,7 @@ def main():
             "risky_http_methods": 6,
             "robots_violations": 4,
             "uneven_request_timing": 3,
-            "different_user_agents": 8,
+            "different_user_agents": 2,
             "attack_url": 15,
         },
         "good_crawler": {
@@ -88,7 +84,7 @@ def main():
             "risky_http_methods": 2,
             "robots_violations": 7,
             "uneven_request_timing": 0,
-            "different_user_agents": 5,
+            "different_user_agents": 7,
             "attack_url": 5,
         },
         "regular_user": {
@@ -99,67 +95,45 @@ def main():
             "attack_url": 0,
         },
     }
-    # Get IPs with recent activity (last minute to match cron schedule)
-    recent_accesses = db_manager.get_access_logs(limit=999999999, since_minutes=1)
-    ips_to_analyze = {item["ip"] for item in recent_accesses}
+    # Parse robots.txt once before the loop (it never changes during a run)
+    robots_disallows = []
+    robots_path = Path(__file__).parent.parent / "templates" / "html" / "robots.txt"
+    with open(robots_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(":")
+            if parts[0] == "Disallow":
+                parts[1] = parts[1].rstrip("/")
+                robots_disallows.append(parts[1].strip())
+
+    # Get IPs flagged for reevaluation (set when a suspicious request arrives)
+    ips_to_analyze = set(db_manager.get_ips_needing_reevaluation())
 
     if not ips_to_analyze:
-        app_logger.debug("[Background Task] analyze-ips: No recent activity, skipping")
+        app_logger.debug(
+            "[Background Task] analyze-ips: No IPs need reevaluation, skipping"
+        )
         return
 
     for ip in ips_to_analyze:
         # Get full history for this IP to perform accurate analysis
-        ip_accesses = db_manager.get_access_logs(limit=999999999, ip_filter=ip)
+        ip_accesses = db_manager.get_access_logs(
+            limit=10000, ip_filter=ip, since_minutes=1440 * 30
+        )  # look back up to 30 days of history for better accuracy
         total_accesses_count = len(ip_accesses)
         if total_accesses_count <= 0:
-            return
+            continue
 
-        # Set category as "unknown" for the first 3 requests
-        if total_accesses_count < 3:
-            category = "unknown"
-            analyzed_metrics = {}
-            category_scores = {
-                "attacker": 0,
-                "good_crawler": 0,
-                "bad_crawler": 0,
-                "regular_user": 0,
-                "unknown": 0,
-            }
-            last_analysis = datetime.now()
-            db_manager.update_ip_stats_analysis(
-                ip, analyzed_metrics, category, category_scores, last_analysis
-            )
-            return 0
         # --------------------- HTTP Methods ---------------------
-        get_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "GET"]
-        )
-        post_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "POST"]
-        )
-        put_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "PUT"]
-        )
-        delete_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "DELETE"]
-        )
-        head_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "HEAD"]
-        )
-        options_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "OPTIONS"]
-        )
-        patch_accesses_count = len(
-            [item for item in ip_accesses if item["method"] == "PATCH"]
-        )
+        method_counts = Counter(item["method"] for item in ip_accesses)
         if total_accesses_count > http_risky_methods_threshold:
-            http_method_attacker_score = (
-                post_accesses_count
-                + put_accesses_count
-                + delete_accesses_count
-                + options_accesses_count
-                + patch_accesses_count
-            ) / total_accesses_count
+            risky_count = sum(
+                method_counts.get(m, 0)
+                for m in ("POST", "PUT", "DELETE", "OPTIONS", "PATCH")
+            )
+            http_method_attacker_score = risky_count / total_accesses_count
         else:
             http_method_attacker_score = 0
         # print(f"HTTP Method attacker score: {http_method_attacker_score}")
@@ -174,21 +148,6 @@ def main():
             score["bad_crawler"]["risky_http_methods"] = False
             score["regular_user"]["risky_http_methods"] = False
         # --------------------- Robots Violations ---------------------
-        # respect robots.txt and login/config pages access frequency
-        robots_disallows = []
-        robots_path = Path(__file__).parent.parent / "templates" / "html" / "robots.txt"
-        with open(robots_path, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split(":")
-
-                if parts[0] == "Disallow":
-                    parts[1] = parts[1].rstrip("/")
-                    # print(f"DISALLOW {parts[1]}")
-                    robots_disallows.append(parts[1].strip())
-        # if 0 100% sure is good crawler, if >10% of robots violated is bad crawler or attacker
         violated_robots_count = len(
             [
                 item
@@ -261,7 +220,7 @@ def main():
         if len(user_agents_used) >= user_agents_used_threshold:
             score["attacker"]["different_user_agents"] = True
             score["good_crawler"]["different_user_agents"] = False
-            score["bad_crawler"]["different_user_agentss"] = True
+            score["bad_crawler"]["different_user_agents"] = True
             score["regular_user"]["different_user_agents"] = False
         else:
             score["attacker"]["different_user_agents"] = False
