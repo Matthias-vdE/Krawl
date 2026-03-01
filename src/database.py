@@ -1987,18 +1987,13 @@ class DatabaseManager:
                 base_filters.append(AccessLog.ip == ip_filter)
 
             # Count total unique access logs with attack detections
-            count_query = (
-                session.query(AccessLog)
-                .join(AttackDetection)
-            )
+            count_query = session.query(AccessLog).join(AttackDetection)
             if base_filters:
                 count_query = count_query.filter(*base_filters)
             total_attacks = count_query.distinct(AccessLog.id).count()
 
             # Get paginated access logs with attack detections
-            query = (
-                session.query(AccessLog).join(AttackDetection)
-            )
+            query = session.query(AccessLog).join(AttackDetection)
             if base_filters:
                 query = query.filter(*base_filters)
             query = query.distinct(AccessLog.id)

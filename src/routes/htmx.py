@@ -245,7 +245,10 @@ async def htmx_attacks(
 ):
     db = get_db()
     result = db.get_attack_types_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order,
+        page=max(1, page),
+        page_size=5,
+        sort_by=sort_by,
+        sort_order=sort_order,
         ip_filter=ip_filter,
     )
 
