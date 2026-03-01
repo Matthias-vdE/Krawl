@@ -33,20 +33,24 @@
     <img src="https://img.shields.io/badge/helm-chart-0F1689?logo=helm&logoColor=white" alt="Helm Chart">
   </a>
 </div>
-
-<br>
-
-<p align="center">
-  <a href="#what-is-krawl">What is Krawl?</a> •
-  <a href="#-installation">Installation</a> •
-  <a href="#honeypot-pages">Honeypot Pages</a> •
-  <a href="#dashboard">Dashboard</a> •
-  <a href="./ToDo.md">Todo</a> •
-  <a href="#-contributing">Contributing</a>
-</p>
-
-<br>
 </div>
+
+## Table of Contents
+- [Demo](#demo)
+- [What is Krawl?](#what-is-krawl)
+- [Krawl Dashboard](#krawl-dashboard)
+- [Installation](#-installation)
+  - [Docker Run](#docker-run)
+  - [Docker Compose](#docker-compose)
+  - [Kubernetes](#kubernetes)
+- [Configuration](#configuration)
+  - [config.yaml](#configuration-via-configyaml)
+  - [Environment Variables](#configuration-via-enviromental-variables)
+- [Ban Malicious IPs](#use-krawl-to-ban-malicious-ips)
+- [IP Reputation](#ip-reputation)
+- [Forward Server Header](#forward-server-header)
+- [Additional Documentation](#additional-documentation)
+- [Contributing](#-contributing)
 
 ## Demo
 Tip: crawl the `robots.txt` paths for additional fun
@@ -67,7 +71,7 @@ It features:
 - **Fake Login Pages**: WordPress, phpMyAdmin, admin panels
 - **Honeypot Paths**: Advertised in robots.txt to catch scanners
 - **Fake Credentials**: Realistic-looking usernames, passwords, API keys
-- **[Canary Token](#customizing-the-canary-token) Integration**: External alert triggering
+- **[Canary Token](docs/canary-token.md) Integration**: External alert triggering
 - **Random server headers**: Confuse attacks based on server header and version
 - **Real-time Dashboard**: Monitor suspicious activity
 - **Customizable Wordlists**: Easy JSON-based configuration
@@ -75,7 +79,27 @@ It features:
 
 ![dashboard](img/deception-page.png)
 
+
+## Krawl Dashboard
+
+Krawl provides a comprehensive dashboard, accessible at a **random secret path** generated at startup or at a **custom path** configured via `KRAWL_DASHBOARD_SECRET_PATH`. This keeps the dashboard hidden from attackers scanning your honeypot.
+
+The dashboard is organized in three main tabs:
+
+- **Overview** — High-level view of attack activity: an interactive map of IP origins, recent suspicious requests, and top IPs, User-Agents, and paths.
+
 ![geoip](img/geoip_dashboard.png)
+
+- **Attacks** — Detailed breakdown of captured credentials, honeypot triggers, and detected attack types (SQLi, XSS, path traversal, etc.) with charts and tables.
+
+![attack_types](img/attack_types.png)
+
+- **IP Insight** — In-depth forensic view of a selected IP: geolocation, ISP/ASN info, reputation flags, behavioral timeline, attack type distribution, and full access history.
+
+![ipinsight](img/ip_insight_dashboard.png)
+
+For more details, see the [Dashboard documentation](docs/dashboard.md).
+
 
 ## 🚀 Installation
 
@@ -89,7 +113,7 @@ docker run -d \
   -e KRAWL_PORT=5000 \
   -e KRAWL_DELAY=100 \
   -e KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard" \
-  -e KRAWL_DATABASE_RETENTION_DAYS=30 \
+  -v krawl-data:/app/data \
   --name krawl \
   ghcr.io/blessedrebus/krawl:latest
 ```
@@ -136,63 +160,12 @@ docker-compose down
 ### Kubernetes
 **Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the helm chart](helm/README.md).
 
-## Use Krawl to Ban Malicious IPs
-Krawl uses a reputation-based system to classify attacker IP addresses. Every five minutes, Krawl exports the identified malicious IPs to a `malicious_ips.txt` file.
-
-This file can either be mounted from the Docker container into another system or downloaded directly via `curl`:
-
-```bash
-curl https://your-krawl-instance/<DASHBOARD-PATH>/api/download/malicious_ips.txt
-```
-
-This file enables automatic blocking of malicious traffic across various platforms. You can use it to update firewall rules on:
-* [OPNsense and pfSense](https://www.allthingstech.ch/using-opnsense-and-ip-blocklists-to-block-malicious-traffic)
-* [RouterOS](https://rentry.co/krawl-routeros)
-* [IPtables](plugins/iptables/README.md) and [Nftables](plugins/nftables/README.md)
-* [Fail2Ban](plugins/fail2ban/README.md)
-
-## IP Reputation
-Krawl [uses tasks that analyze recent traffic to build and continuously update an IP reputation](src/tasks/analyze_ips.py) score. It runs periodically and evaluates each active IP address based on multiple behavioral indicators to classify it as an attacker, crawler, or regular user. Thresholds are fully customizable.
-
-![ip reputation](img/ip-reputation.png)
-
-The analysis includes:
-- **Risky HTTP methods usage** (e.g. POST, PUT, DELETE ratios)
-- **Robots.txt violations**
-- **Request timing anomalies** (bursty or irregular patterns)
-- **User-Agent consistency**
-- **Attack URL detection** (e.g. SQL injection, XSS patterns)
-
-Each signal contributes to a weighted scoring model that assigns a reputation category:
-- `attacker`
-- `bad_crawler`
-- `good_crawler`
-- `regular_user`
-- `unknown` (for insufficient data)
-
-The resulting scores and metrics are stored in the database and used by Krawl to drive dashboards, reputation tracking, and automated mitigation actions such as IP banning or firewall integration.
-
-## Forward server header
-If Krawl is deployed behind a proxy such as NGINX the **server header** should be forwarded using the following configuration in your proxy:
-
-```bash
-location / {
-    proxy_pass https://your-krawl-instance;
-    proxy_pass_header Server;
-}
-```
-
-## API
-Krawl uses the following APIs
-- http://ip-api.com (IP Data)
-- https://iprep.lcrawl.com (IP Reputation)
-- https://nominatim.openstreetmap.org/reverse (Reverse IP Lookup)
-- https://api.ipify.org (Public IP discovery)
-- http://ident.me (Public IP discovery)
-- https://ifconfig.me (Public IP discovery)
 
 ## Configuration
 Krawl uses a **configuration hierarchy** in which **environment variables take precedence over the configuration file**. This approach is recommended for Docker deployments and quick out-of-the-box customization.
+
+### Configuration via config.yaml
+You can use the [config.yaml](config.yaml) file for advanced configurations, such as Docker Compose or Helm chart deployments.
 
 ### Configuration via Enviromental Variables
 
@@ -256,153 +229,63 @@ docker run -d \
   ghcr.io/blessedrebus/krawl:latest
 ```
 
-### Configuration via config.yaml
-You can use the [config.yaml](config.yaml) file for more advanced configurations, such as Docker Compose or Helm chart deployments.
+## Use Krawl to Ban Malicious IPs
+Krawl uses a reputation-based system to classify attacker IP addresses. Every five minutes, Krawl exports the identified malicious IPs to a `malicious_ips.txt` file.
 
-# Honeypot
-Below is a complete overview of the Krawl honeypot’s capabilities
+This file can either be mounted from the Docker container into another system or downloaded directly via `curl`:
 
-## robots.txt
-The actual (juicy) robots.txt configuration [is the following](src/templates/html/robots.txt).
+```bash
+curl https://your-krawl-instance/<DASHBOARD-PATH>/api/download/malicious_ips.txt
+```
 
-## Honeypot pages
+This file enables automatic blocking of malicious traffic across various platforms. You can use it to update firewall rules on:
+* [OPNsense and pfSense](https://www.allthingstech.ch/using-opnsense-and-ip-blocklists-to-block-malicious-traffic)
+* [RouterOS](https://rentry.co/krawl-routeros)
+* [IPtables](plugins/iptables/README.md) and [Nftables](plugins/nftables/README.md)
+* [Fail2Ban](plugins/fail2ban/README.md)
 
-### Common Login Attempts
-Requests to common admin endpoints (`/admin/`, `/wp-admin/`, `/phpMyAdmin/`) return a fake login page. Any login attempt triggers a 1-second delay to simulate real processing and is fully logged in the dashboard (credentials, IP, headers, timing).
+## IP Reputation
+Krawl [uses tasks that analyze recent traffic to build and continuously update an IP reputation](src/tasks/analyze_ips.py) score. It runs periodically and evaluates each active IP address based on multiple behavioral indicators to classify it as an attacker, crawler, or regular user. Thresholds are fully customizable.
 
-![admin page](img/admin-page.png)
+![ip reputation](img/ip-reputation.png)
 
-### Common Misconfiguration Paths
-Requests to paths like `/backup/`, `/config/`, `/database/`, `/private/`, or `/uploads/` return a fake directory listing populated with “interesting” files, each assigned a random file size to look realistic.
+The analysis includes:
+- **Risky HTTP methods usage** (e.g. POST, PUT, DELETE ratios)
+- **Robots.txt violations**
+- **Request timing anomalies** (bursty or irregular patterns)
+- **User-Agent consistency**
+- **Attack URL detection** (e.g. SQL injection, XSS patterns)
 
-![directory-page](img/directory-page.png)
+Each signal contributes to a weighted scoring model that assigns a reputation category:
+- `attacker`
+- `bad_crawler`
+- `good_crawler`
+- `regular_user`
+- `unknown` (for insufficient data)
 
-### Environment File Leakage
-The `.env` endpoint exposes fake database connection strings, **AWS API keys**, and **Stripe secrets**. It intentionally returns an error due to the `Content-Type` being `application/json` instead of plain text, mimicking a "juicy" misconfiguration that crawlers and scanners often flag as information leakage.
+The resulting scores and metrics are stored in the database and used by Krawl to drive dashboards, reputation tracking, and automated mitigation actions such as IP banning or firewall integration.
 
-### Server Error Information
-The `/server` page displays randomly generated fake error information for each known server.
-
-![server and env page](img/server-and-env-page.png)
-
-### API Endpoints with Sensitive Data
-The pages `/api/v1/users` and `/api/v2/secrets` show fake users and random secrets in JSON format
-
-![users and secrets](img/users-and-secrets.png)
-
-### Exposed Credential Files
-The pages `/credentials.txt` and `/passwords.txt` show fake users and random secrets
-
-![credentials and passwords](img/credentials-and-passwords.png)
-
-### SQL Injection and XSS Detection
-Pages such as `/users`, `/search`, `/contact`, `/info`, `/input`, and `/feedback`, along with APIs like `/api/sql` and `/api/database`, are designed to lure attackers into performing attacks such as **SQL injection** or **XSS**.
-
-![sql injection](img/sql_injection.png)
-
-Automated tools like **SQLMap** will receive a different randomized database error on each request, increasing scan noise and confusing the attacker. All detected attacks are logged and displayed in the dashboard.
-
-### Path Traversal Detection
-Krawl detects and responds to **path traversal** attempts targeting common system files like `/etc/passwd`, `/etc/shadow`, or Windows system paths. When an attacker tries to access sensitive files using patterns like `../../../etc/passwd` or encoded variants (`%2e%2e/`, `%252e`), Krawl returns convincing fake file contents with realistic system users, UIDs, GIDs, and shell configurations. This wastes attacker time while logging the full attack pattern.
-
-### XXE (XML External Entity) Injection
-The `/api/xml` and `/api/parser` endpoints accept XML input and are designed to detect **XXE injection** attempts. When attackers try to exploit external entity declarations (`<!ENTITY`, `<!DOCTYPE`, `SYSTEM`) or reference entities to access local files, Krawl responds with realistic XML responses that appear to process the entities successfully. The honeypot returns fake file contents, simulated entity values (like `admin_credentials` or `database_connection`), or realistic error messages, making the attack appear successful while fully logging the payload.
-
-### Command Injection Detection
-Pages like `/api/exec`, `/api/run`, and `/api/system` simulate command execution endpoints vulnerable to **command injection**. When attackers attempt to inject shell commands using patterns like `; whoami`, `| cat /etc/passwd`, or backticks, Krawl responds with realistic command outputs. For example, `whoami` returns fake usernames like `www-data` or `nginx`, while `uname` returns fake Linux kernel versions. Network commands like `wget` or `curl` simulate downloads or return "command not found" errors, creating believable responses that delay and confuse automated exploitation tools.
-## Example usage behind reverse proxy
-
-You can configure a reverse proxy so all web requests land on the Krawl page by default, and hide your real content behind a secret hidden url. For example:
+## Forward server header
+If Krawl is deployed behind a proxy such as NGINX the **server header** should be forwarded using the following configuration in your proxy:
 
 ```bash
 location / {
     proxy_pass https://your-krawl-instance;
     proxy_pass_header Server;
 }
-
-location /my-hidden-service {
-    proxy_pass https://my-hidden-service;
-    proxy_pass_header Server;
-}
 ```
 
-Alternatively, you can create a bunch of different "interesting" looking domains. For example:
+## Additional Documentation
 
-- admin.example.com
-- portal.example.com
-- sso.example.com
-- login.example.com
-- ...
-
-Additionally, you may configure your reverse proxy to forward all non-existing subdomains (e.g. nonexistent.example.com) to one of these domains so that any crawlers that are guessing domains at random will automatically end up at your Krawl instance.
-
-## Enable database dump job for backups
-
-To enable the database dump job, set the following variables (*config file example*)
-
-```yaml
-backups:
-    path: "backups" # where backup will be saved
-    cron: "*/30 * * * *" # frequency of the cronjob
-    enabled: true
-```
-
-
-## Customizing the Canary Token
-
-To create a custom canary token, visit https://canarytokens.org
-
-and generate a “Web bug” canary token.
-
-This optional token is triggered when a crawler fully traverses the webpage until it reaches 0. At that point, a URL is returned. When this URL is requested, it sends an alert to the user via email, including the visitor’s IP address and user agent.
-
-
-To enable this feature, set the canary token URL [using the environment variable](#configuration-via-environment-variables) `KRAWL_CANARY_TOKEN_URL`.
-
-## Customizing the wordlist
-
-Edit `wordlists.json` to customize fake data for your use case
-
-```json
-{
-  "usernames": {
-    "prefixes": ["admin", "root", "user"],
-    "suffixes": ["_prod", "_dev", "123"]
-  },
-  "passwords": {
-    "prefixes": ["P@ssw0rd", "Admin"],
-    "simple": ["test", "password"]
-  },
-  "directory_listing": {
-    "files": ["credentials.txt", "backup.sql"],
-    "directories": ["admin/", "backup/"]
-  }
-}
-```
-
-or **values.yaml** in the case of helm chart installation
-
-## Dashboard
-
-Access the dashboard at `http://<server-ip>:<port>/<dashboard-path>`
-
-The dashboard shows:
-- Total and unique accesses
-- Suspicious activity and attack detection
-- Top IPs, paths, user-agents and GeoIP localization
-- Real-time monitoring
-
-The attackers’ access to the honeypot endpoint and related suspicious activities (such as failed login attempts) are logged.
-
-Krawl also implements a scoring system designed to distinguish between malicious and legitimate behavior on the website.
-
-![dashboard-1](img/dashboard-1.png)
-
-The top IP Addresses is shown along with top paths and User Agents
-
-![dashboard-2](img/dashboard-2.png)
-
-![dashboard-3](img/dashboard-3.png)
+| Topic | Description |
+|-------|-------------|
+| [API](docs/api.md) | External APIs used by Krawl for IP data, reputation, and geolocation |
+| [Honeypot](docs/honeypot.md) | Full overview of honeypot pages: fake logins, directory listings, credential files, SQLi/XSS/XXE/command injection traps, and more |
+| [Reverse Proxy](docs/reverse-proxy.md) | How to deploy Krawl behind NGINX or use decoy subdomains |
+| [Database Backups](docs/backups.md) | Enable and configure the automatic database dump job |
+| [Canary Token](docs/canary-token.md) | Set up external alert triggers via canarytokens.org |
+| [Wordlist](docs/wordlist.md) | Customize fake usernames, passwords, and directory listings |
+| [Dashboard](docs/dashboard.md) | Access and explore the real-time monitoring dashboard |
 
 ## 🤝 Contributing
 
@@ -413,14 +296,9 @@ Contributions welcome! Please:
 4. Submit a pull request (explain the changes!)
 
 
-<div align="center">
-
-## ⚠️ Disclaimer
-
-**This is a deception/honeypot system.**
-Deploy in isolated environments and monitor carefully for security events.
-Use responsibly and in compliance with applicable laws and regulations.
+## Disclaimer
+> [!CAUTION]
+> This is a deception/honeypot system. Deploy in isolated environments and monitor carefully for security events. Use responsibly and in compliance with applicable laws and regulations.
 
 ## Star History
 <img src="https://api.star-history.com/svg?repos=BlessedRebuS/Krawl&type=Date" width="600" alt="Star History Chart" />
-
