@@ -185,6 +185,19 @@
 </div>
 {% endif %}
 
+{# Detected Attack Types table – only for attackers #}
+{% if stats.category and stats.category | lower == 'attacker' %}
+<div class="table-container alert-section" style="margin-top: 20px;">
+    <h2>Detected Attack Types</h2>
+    <div class="htmx-container"
+         hx-get="{{ dashboard_path }}/htmx/attacks?page=1&ip_filter={{ ip_address }}"
+         hx-trigger="revealed"
+         hx-swap="innerHTML">
+        <div class="htmx-indicator">Loading...</div>
+    </div>
+</div>
+{% endif %}
+
 {# Access History table #}
 <div class="table-container alert-section" style="margin-top: 20px;">
     <h2>Access History</h2>

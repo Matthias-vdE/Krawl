@@ -1955,6 +1955,7 @@ class DatabaseManager:
         page_size: int = 5,
         sort_by: str = "timestamp",
         sort_order: str = "desc",
+        ip_filter: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Retrieve paginated list of detected attack types with access logs.
@@ -1964,6 +1965,7 @@ class DatabaseManager:
             page_size: Number of results per page
             sort_by: Field to sort by (timestamp, ip, attack_type)
             sort_order: Sort order (asc or desc)
+            ip_filter: Optional IP address to filter results
 
         Returns:
             Dictionary with attacks list and pagination info
@@ -1979,18 +1981,27 @@ class DatabaseManager:
                 sort_order.lower() if sort_order.lower() in {"asc", "desc"} else "desc"
             )
 
+            # Base query filter
+            base_filters = []
+            if ip_filter:
+                base_filters.append(AccessLog.ip == ip_filter)
+
             # Count total unique access logs with attack detections
-            total_attacks = (
+            count_query = (
                 session.query(AccessLog)
                 .join(AttackDetection)
-                .distinct(AccessLog.id)
-                .count()
             )
+            if base_filters:
+                count_query = count_query.filter(*base_filters)
+            total_attacks = count_query.distinct(AccessLog.id).count()
 
             # Get paginated access logs with attack detections
             query = (
-                session.query(AccessLog).join(AttackDetection).distinct(AccessLog.id)
+                session.query(AccessLog).join(AttackDetection)
             )
+            if base_filters:
+                query = query.filter(*base_filters)
+            query = query.distinct(AccessLog.id)
 
             if sort_by == "timestamp":
                 query = query.order_by(

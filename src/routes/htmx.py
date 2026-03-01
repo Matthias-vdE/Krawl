@@ -241,10 +241,12 @@ async def htmx_attacks(
     page: int = Query(1),
     sort_by: str = Query("timestamp"),
     sort_order: str = Query("desc"),
+    ip_filter: str = Query(None),
 ):
     db = get_db()
     result = db.get_attack_types_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order,
+        ip_filter=ip_filter,
     )
 
     # Transform attack data for template (join attack_types list, map id to log_id)
@@ -271,6 +273,7 @@ async def htmx_attacks(
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
+            "ip_filter": ip_filter or "",
         },
     )
 
