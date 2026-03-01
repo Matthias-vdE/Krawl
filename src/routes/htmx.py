@@ -2,7 +2,7 @@
 
 """
 HTMX fragment endpoints.
-Server-rendered HTML partials for table pagination, sorting, and IP details.
+Server-rendered HTML partials for table pagination, sorting, IP details, and search.
 """
 
 from fastapi import APIRouter, Request, Response, Query
@@ -58,7 +58,7 @@ async def htmx_top_ips(
 ):
     db = get_db()
     result = db.get_top_ips_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        page=max(1, page), page_size=8, sort_by=sort_by, sort_order=sort_order
     )
 
     templates = get_templates()
@@ -167,6 +167,42 @@ async def htmx_attackers(
     )
 
 
+# ── Access logs by ip ────────────────────────────────────────────────────────
+
+
+@router.get("/htmx/access-logs")
+async def htmx_access_logs_by_ip(
+    request: Request,
+    page: int = Query(1),
+    sort_by: str = Query("total_requests"),
+    sort_order: str = Query("desc"),
+    ip_filter: str = Query("ip_filter"),
+):
+    db = get_db()
+    result = db.get_access_logs_paginated(
+        page=max(1, page), page_size=25, ip_filter=ip_filter
+    )
+
+    # Normalize pagination key (DB returns total_attackers, template expects total)
+    pagination = result["pagination"]
+    if "total_access_logs" in pagination and "total" not in pagination:
+        pagination["total"] = pagination["total_access_logs"]
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        "dashboard/partials/access_by_ip_table.html",
+        {
+            "request": request,
+            "dashboard_path": _dashboard_path(request),
+            "items": result["access_logs"],
+            "pagination": pagination,
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "ip_filter": ip_filter,
+        },
+    )
+
+
 # ── Credentials ──────────────────────────────────────────────────────
 
 
@@ -205,10 +241,15 @@ async def htmx_attacks(
     page: int = Query(1),
     sort_by: str = Query("timestamp"),
     sort_order: str = Query("desc"),
+    ip_filter: str = Query(None),
 ):
     db = get_db()
     result = db.get_attack_types_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        page=max(1, page),
+        page_size=5,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        ip_filter=ip_filter,
     )
 
     # Transform attack data for template (join attack_types list, map id to log_id)
@@ -235,6 +276,7 @@ async def htmx_attacks(
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
+            "ip_filter": ip_filter or "",
         },
     )
 
@@ -280,6 +322,34 @@ async def htmx_patterns(
     )
 
 
+# ── IP Insight (full IP page as partial) ─────────────────────────────
+
+
+@router.get("/htmx/ip-insight/{ip_address:path}")
+async def htmx_ip_insight(ip_address: str, request: Request):
+    db = get_db()
+    stats = db.get_ip_stats_by_ip(ip_address)
+
+    if not stats:
+        stats = {"ip": ip_address, "total_requests": "N/A"}
+
+    # Transform fields for template compatibility
+    list_on = stats.get("list_on") or {}
+    stats["blocklist_memberships"] = list(list_on.keys()) if list_on else []
+    stats["reverse_dns"] = stats.get("reverse")
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        "dashboard/partials/ip_insight.html",
+        {
+            "request": request,
+            "dashboard_path": _dashboard_path(request),
+            "stats": stats,
+            "ip_address": ip_address,
+        },
+    )
+
+
 # ── IP Detail ────────────────────────────────────────────────────────
 
 
@@ -303,5 +373,35 @@ async def htmx_ip_detail(ip_address: str, request: Request):
             "request": request,
             "dashboard_path": _dashboard_path(request),
             "stats": stats,
+        },
+    )
+
+
+# ── Search ───────────────────────────────────────────────────────────
+
+
+@router.get("/htmx/search")
+async def htmx_search(
+    request: Request,
+    q: str = Query(""),
+    page: int = Query(1),
+):
+    q = q.strip()
+    if not q:
+        return Response(content="", media_type="text/html")
+
+    db = get_db()
+    result = db.search_attacks_and_ips(query=q, page=max(1, page), page_size=20)
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        "dashboard/partials/search_results.html",
+        {
+            "request": request,
+            "dashboard_path": _dashboard_path(request),
+            "attacks": result["attacks"],
+            "ips": result["ips"],
+            "query": q,
+            "pagination": result["pagination"],
         },
     )

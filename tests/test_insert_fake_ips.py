@@ -548,12 +548,13 @@ def generate_fake_data(
 if __name__ == "__main__":
     import sys
 
-    # Allow command-line arguments for customization
-    num_ips = int(sys.argv[1]) if len(sys.argv) > 1 else 20
-    logs_per_ip = int(sys.argv[2]) if len(sys.argv) > 2 else 15
-    credentials_per_ip = int(sys.argv[3]) if len(sys.argv) > 3 else 3
     # Add --no-cleanup flag to skip database cleanup
     cleanup = "--no-cleanup" not in sys.argv
+    # Filter out flags before parsing positional args
+    positional = [a for a in sys.argv[1:] if not a.startswith("--")]
+    num_ips = int(positional[0]) if len(positional) > 0 else 20
+    logs_per_ip = int(positional[1]) if len(positional) > 1 else 15
+    credentials_per_ip = int(positional[2]) if len(positional) > 2 else 3
 
     generate_fake_data(
         num_ips,

@@ -30,7 +30,7 @@ def get_templates() -> Jinja2Templates:
     return _templates
 
 
-def _format_ts(value):
+def _format_ts(value, time_only=False):
     """Custom Jinja2 filter for formatting ISO timestamps."""
     if not value:
         return "N/A"
@@ -39,6 +39,8 @@ def _format_ts(value):
             value = datetime.fromisoformat(value)
         except (ValueError, TypeError):
             return value
+    if time_only:
+        return value.strftime("%H:%M:%S")
     if value.date() == datetime.now().date():
         return value.strftime("%H:%M:%S")
     return value.strftime("%m/%d/%Y %H:%M:%S")

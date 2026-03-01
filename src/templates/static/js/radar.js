@@ -11,11 +11,13 @@
  * @param {Object} categoryScores - Object with keys: attacker, good_crawler, bad_crawler, regular_user, unknown
  * @param {number} [size=200] - Width/height of the SVG in pixels
  * @param {boolean} [showLegend=true] - Whether to show the legend below the chart
+ * @param {string} [legendPosition='below'] - 'below' or 'side' (side = legend to the right of the chart)
  * @returns {string} HTML string containing the SVG radar chart
  */
-function generateRadarChart(categoryScores, size, showLegend) {
+function generateRadarChart(categoryScores, size, showLegend, legendPosition) {
     size = size || 200;
     if (showLegend === undefined) showLegend = true;
+    legendPosition = legendPosition || 'below';
 
     if (!categoryScores || Object.keys(categoryScores).length === 0) {
         return '<div style="color: #8b949e; text-align: center; padding: 20px;">No category data available</div>';
@@ -55,7 +57,8 @@ function generateRadarChart(categoryScores, size, showLegend) {
 
     const cx = 100, cy = 100, maxRadius = 75;
 
-    let html = '<div style="display: flex; flex-direction: column; align-items: center;">';
+    const flexDir = legendPosition === 'side' ? 'row' : 'column';
+    let html = `<div style="display: flex; flex-direction: ${flexDir}; align-items: center; gap: 16px; justify-content: center;">`;
     html += `<svg class="radar-chart" viewBox="-30 -30 260 260" preserveAspectRatio="xMidYMid meet" style="width: ${size}px; height: ${size}px;">`;
 
     // Draw concentric circles (grid)

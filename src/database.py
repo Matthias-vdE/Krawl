@@ -815,8 +815,8 @@ class DatabaseManager:
     def flag_stale_ips_for_reevaluation(self) -> int:
         """
         Flag IPs for reevaluation where:
-        - last_seen is between 15 and 30 days ago
-        - last_analysis is more than 10 days ago (or never analyzed)
+        - last_seen is between 5 and 30 days ago
+        - last_analysis is more than 5 days ago
 
         Returns:
             Number of IPs flagged for reevaluation
@@ -825,18 +825,15 @@ class DatabaseManager:
         try:
             now = datetime.now()
             last_seen_lower = now - timedelta(days=30)
-            last_seen_upper = now - timedelta(days=15)
-            last_analysis_cutoff = now - timedelta(days=10)
+            last_seen_upper = now - timedelta(days=5)
+            last_analysis_cutoff = now - timedelta(days=5)
 
             count = (
                 session.query(IpStats)
                 .filter(
                     IpStats.last_seen >= last_seen_lower,
                     IpStats.last_seen <= last_seen_upper,
-                    or_(
-                        IpStats.last_analysis <= last_analysis_cutoff,
-                        IpStats.last_analysis.is_(None),
-                    ),
+                    IpStats.last_analysis <= last_analysis_cutoff,
                     IpStats.need_reevaluation == False,
                     IpStats.manual_category == False,
                 )
@@ -850,6 +847,99 @@ class DatabaseManager:
         except Exception as e:
             session.rollback()
             raise
+
+    def flag_all_ips_for_reevaluation(self) -> int:
+        """
+        Flag ALL IPs for reevaluation, regardless of staleness.
+        Skips IPs that have a manual category set.
+
+        Returns:
+            Number of IPs flagged for reevaluation
+        """
+        session = self.session
+        try:
+            count = (
+                session.query(IpStats)
+                .filter(
+                    IpStats.need_reevaluation == False,
+                    IpStats.manual_category == False,
+                )
+                .update(
+                    {IpStats.need_reevaluation: True},
+                    synchronize_session=False,
+                )
+            )
+            session.commit()
+            return count
+        except Exception as e:
+            session.rollback()
+            raise
+
+    def get_access_logs_paginated(
+        self,
+        page: int = 1,
+        page_size: int = 25,
+        ip_filter: Optional[str] = None,
+        suspicious_only: bool = False,
+        since_minutes: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Retrieve access logs with pagination and optional filtering.
+
+        Args:
+            page: Page to retrieve
+            page_size: Number of records for page
+            ip_filter: Filter by IP address
+            suspicious_only: Only return suspicious requests
+            since_minutes: Only return logs from the last N minutes
+
+        Returns:
+            List of access log dictionaries
+        """
+        session = self.session
+        try:
+            offset = (page - 1) * page_size
+            query = session.query(AccessLog).order_by(AccessLog.timestamp.desc())
+
+            if ip_filter:
+                query = query.filter(AccessLog.ip == sanitize_ip(ip_filter))
+            if suspicious_only:
+                query = query.filter(AccessLog.is_suspicious == True)
+            if since_minutes is not None:
+                cutoff_time = datetime.now() - timedelta(minutes=since_minutes)
+                query = query.filter(AccessLog.timestamp >= cutoff_time)
+
+            logs = query.offset(offset).limit(page_size).all()
+            # Get total count of attackers
+            total_access_logs = (
+                session.query(AccessLog)
+                .filter(AccessLog.ip == sanitize_ip(ip_filter))
+                .count()
+            )
+            total_pages = (total_access_logs + page_size - 1) // page_size
+
+            return {
+                "access_logs": [
+                    {
+                        "id": log.id,
+                        "ip": log.ip,
+                        "path": log.path,
+                        "user_agent": log.user_agent,
+                        "method": log.method,
+                        "is_suspicious": log.is_suspicious,
+                        "is_honeypot_trigger": log.is_honeypot_trigger,
+                        "timestamp": log.timestamp.isoformat(),
+                        "attack_types": [d.attack_type for d in log.attack_detections],
+                    }
+                    for log in logs
+                ],
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_logs": total_access_logs,
+                    "total_pages": total_pages,
+                },
+            }
         finally:
             self.close_session()
 
@@ -1018,6 +1108,8 @@ class DatabaseManager:
                 "region": stat.region,
                 "region_name": stat.region_name,
                 "timezone": stat.timezone,
+                "latitude": stat.latitude,
+                "longitude": stat.longitude,
                 "isp": stat.isp,
                 "reverse": stat.reverse,
                 "asn": stat.asn,
@@ -1316,26 +1408,16 @@ class DatabaseManager:
         """
         session = self.session
         try:
-            # Get server IP to filter it out
             from config import get_config
 
             config = get_config()
             server_ip = config.get_server_ip()
 
-            results = (
-                session.query(AccessLog.ip, func.count(AccessLog.id).label("count"))
-                .group_by(AccessLog.ip)
-                .order_by(func.count(AccessLog.id).desc())
-                .all()
-            )
+            query = session.query(IpStats.ip, IpStats.total_requests)
+            query = self._public_ip_filter(query, IpStats.ip, server_ip)
+            results = query.order_by(IpStats.total_requests.desc()).limit(limit).all()
 
-            # Filter out local/private IPs and server IP, then limit results
-            filtered = [
-                (row.ip, row.count)
-                for row in results
-                if is_valid_public_ip(row.ip, server_ip)
-            ]
-            return filtered[:limit]
+            return [(row.ip, row.total_requests) for row in results]
         finally:
             self.close_session()
 
@@ -1402,23 +1484,18 @@ class DatabaseManager:
         """
         session = self.session
         try:
-            # Get server IP to filter it out
             from config import get_config
 
             config = get_config()
             server_ip = config.get_server_ip()
 
-            logs = (
+            query = (
                 session.query(AccessLog)
                 .filter(AccessLog.is_suspicious == True)
                 .order_by(AccessLog.timestamp.desc())
-                .all()
             )
-
-            # Filter out local/private IPs and server IP
-            filtered_logs = [
-                log for log in logs if is_valid_public_ip(log.ip, server_ip)
-            ]
+            query = self._public_ip_filter(query, AccessLog.ip, server_ip)
+            logs = query.limit(limit).all()
 
             return [
                 {
@@ -1427,7 +1504,7 @@ class DatabaseManager:
                     "user_agent": log.user_agent,
                     "timestamp": log.timestamp.isoformat(),
                 }
-                for log in filtered_logs[:limit]
+                for log in logs
             ]
         finally:
             self.close_session()
@@ -1532,44 +1609,59 @@ class DatabaseManager:
 
             offset = (page - 1) * page_size
 
-            # Get honeypot triggers grouped by IP
-            results = (
-                session.query(AccessLog.ip, AccessLog.path)
-                .filter(AccessLog.is_honeypot_trigger == True)
-                .all()
+            # Count distinct paths per IP using SQL GROUP BY
+            count_col = func.count(distinct(AccessLog.path)).label("path_count")
+            base_query = session.query(AccessLog.ip, count_col).filter(
+                AccessLog.is_honeypot_trigger == True
+            )
+            base_query = self._public_ip_filter(base_query, AccessLog.ip, server_ip)
+            base_query = base_query.group_by(AccessLog.ip)
+
+            # Get total count of distinct honeypot IPs
+            total_honeypots = base_query.count()
+
+            # Apply sorting
+            if sort_by == "count":
+                order_expr = (
+                    count_col.desc() if sort_order == "desc" else count_col.asc()
+                )
+            else:
+                order_expr = (
+                    AccessLog.ip.desc() if sort_order == "desc" else AccessLog.ip.asc()
+                )
+
+            ip_rows = (
+                base_query.order_by(order_expr).offset(offset).limit(page_size).all()
             )
 
-            # Group paths by IP, filtering out invalid IPs
-            ip_paths: Dict[str, List[str]] = {}
-            for row in results:
-                if not is_valid_public_ip(row.ip, server_ip):
-                    continue
-                if row.ip not in ip_paths:
-                    ip_paths[row.ip] = []
-                if row.path not in ip_paths[row.ip]:
-                    ip_paths[row.ip].append(row.path)
-
-            # Create list and sort
-            honeypot_list = [
-                {"ip": ip, "paths": paths, "count": len(paths)}
-                for ip, paths in ip_paths.items()
-            ]
-
-            if sort_by == "count":
-                honeypot_list.sort(
-                    key=lambda x: x["count"], reverse=(sort_order == "desc")
+            # Fetch distinct paths only for the paginated IPs
+            paginated_ips = [row.ip for row in ip_rows]
+            honeypot_list = []
+            if paginated_ips:
+                path_rows = (
+                    session.query(AccessLog.ip, AccessLog.path)
+                    .filter(
+                        AccessLog.is_honeypot_trigger == True,
+                        AccessLog.ip.in_(paginated_ips),
+                    )
+                    .distinct(AccessLog.ip, AccessLog.path)
+                    .all()
                 )
-            else:  # sort by ip
-                honeypot_list.sort(
-                    key=lambda x: x["ip"], reverse=(sort_order == "desc")
-                )
+                ip_paths: Dict[str, List[str]] = {}
+                for row in path_rows:
+                    ip_paths.setdefault(row.ip, []).append(row.path)
 
-            total_honeypots = len(honeypot_list)
-            paginated = honeypot_list[offset : offset + page_size]
-            total_pages = (total_honeypots + page_size - 1) // page_size
+                # Preserve the order from the sorted query
+                for row in ip_rows:
+                    paths = ip_paths.get(row.ip, [])
+                    honeypot_list.append(
+                        {"ip": row.ip, "paths": paths, "count": row.path_count}
+                    )
+
+            total_pages = max(1, (total_honeypots + page_size - 1) // page_size)
 
             return {
-                "honeypots": paginated,
+                "honeypots": honeypot_list,
                 "pagination": {
                     "page": page,
                     "page_size": page_size,
@@ -1668,6 +1760,9 @@ class DatabaseManager:
         """
         Retrieve paginated list of top IP addresses by access count.
 
+        Uses the IpStats table (which already stores total_requests per IP)
+        instead of doing a costly GROUP BY on the large access_logs table.
+
         Args:
             page: Page number (1-indexed)
             page_size: Number of results per page
@@ -1686,30 +1781,34 @@ class DatabaseManager:
 
             offset = (page - 1) * page_size
 
-            results = (
-                session.query(AccessLog.ip, func.count(AccessLog.id).label("count"))
-                .group_by(AccessLog.ip)
-                .all()
-            )
+            base_query = session.query(IpStats)
+            base_query = self._public_ip_filter(base_query, IpStats.ip, server_ip)
 
-            # Filter out local/private IPs and server IP, then sort
-            filtered = [
-                {"ip": row.ip, "count": row.count}
-                for row in results
-                if is_valid_public_ip(row.ip, server_ip)
-            ]
+            total_ips = base_query.count()
 
             if sort_by == "count":
-                filtered.sort(key=lambda x: x["count"], reverse=(sort_order == "desc"))
-            else:  # sort by ip
-                filtered.sort(key=lambda x: x["ip"], reverse=(sort_order == "desc"))
+                order_col = IpStats.total_requests
+            else:
+                order_col = IpStats.ip
 
-            total_ips = len(filtered)
-            paginated = filtered[offset : offset + page_size]
-            total_pages = (total_ips + page_size - 1) // page_size
+            if sort_order == "desc":
+                base_query = base_query.order_by(order_col.desc())
+            else:
+                base_query = base_query.order_by(order_col.asc())
+
+            results = base_query.offset(offset).limit(page_size).all()
+
+            total_pages = max(1, (total_ips + page_size - 1) // page_size)
 
             return {
-                "ips": paginated,
+                "ips": [
+                    {
+                        "ip": row.ip,
+                        "count": row.total_requests,
+                        "category": row.category or "unknown",
+                    }
+                    for row in results
+                ],
                 "pagination": {
                     "page": page,
                     "page_size": page_size,
@@ -1743,28 +1842,32 @@ class DatabaseManager:
         try:
             offset = (page - 1) * page_size
 
-            results = (
-                session.query(AccessLog.path, func.count(AccessLog.id).label("count"))
-                .group_by(AccessLog.path)
-                .all()
+            count_col = func.count(AccessLog.id).label("count")
+
+            # Get total number of distinct paths
+            total_paths = (
+                session.query(func.count(distinct(AccessLog.path))).scalar() or 0
             )
 
-            # Create list and sort
-            paths_list = [{"path": row.path, "count": row.count} for row in results]
+            # Build query with SQL-level sorting and pagination
+            query = session.query(AccessLog.path, count_col).group_by(AccessLog.path)
 
             if sort_by == "count":
-                paths_list.sort(
-                    key=lambda x: x["count"], reverse=(sort_order == "desc")
+                order_expr = (
+                    count_col.desc() if sort_order == "desc" else count_col.asc()
                 )
-            else:  # sort by path
-                paths_list.sort(key=lambda x: x["path"], reverse=(sort_order == "desc"))
+            else:
+                order_expr = (
+                    AccessLog.path.desc()
+                    if sort_order == "desc"
+                    else AccessLog.path.asc()
+                )
 
-            total_paths = len(paths_list)
-            paginated = paths_list[offset : offset + page_size]
-            total_pages = (total_paths + page_size - 1) // page_size
+            results = query.order_by(order_expr).offset(offset).limit(page_size).all()
+            total_pages = max(1, (total_paths + page_size - 1) // page_size)
 
             return {
-                "paths": paginated,
+                "paths": [{"path": row.path, "count": row.count} for row in results],
                 "pagination": {
                     "page": page,
                     "page_size": page_size,
@@ -1798,33 +1901,44 @@ class DatabaseManager:
         try:
             offset = (page - 1) * page_size
 
-            results = (
-                session.query(
-                    AccessLog.user_agent, func.count(AccessLog.id).label("count")
-                )
-                .filter(AccessLog.user_agent.isnot(None), AccessLog.user_agent != "")
-                .group_by(AccessLog.user_agent)
-                .all()
+            count_col = func.count(AccessLog.id).label("count")
+
+            base_filter = [AccessLog.user_agent.isnot(None), AccessLog.user_agent != ""]
+
+            # Get total number of distinct user agents
+            total_uas = (
+                session.query(func.count(distinct(AccessLog.user_agent)))
+                .filter(*base_filter)
+                .scalar()
+                or 0
             )
 
-            # Create list and sort
-            ua_list = [
-                {"user_agent": row.user_agent, "count": row.count} for row in results
-            ]
+            # Build query with SQL-level sorting and pagination
+            query = (
+                session.query(AccessLog.user_agent, count_col)
+                .filter(*base_filter)
+                .group_by(AccessLog.user_agent)
+            )
 
             if sort_by == "count":
-                ua_list.sort(key=lambda x: x["count"], reverse=(sort_order == "desc"))
-            else:  # sort by user_agent
-                ua_list.sort(
-                    key=lambda x: x["user_agent"], reverse=(sort_order == "desc")
+                order_expr = (
+                    count_col.desc() if sort_order == "desc" else count_col.asc()
+                )
+            else:
+                order_expr = (
+                    AccessLog.user_agent.desc()
+                    if sort_order == "desc"
+                    else AccessLog.user_agent.asc()
                 )
 
-            total_uas = len(ua_list)
-            paginated = ua_list[offset : offset + page_size]
-            total_pages = (total_uas + page_size - 1) // page_size
+            results = query.order_by(order_expr).offset(offset).limit(page_size).all()
+            total_pages = max(1, (total_uas + page_size - 1) // page_size)
 
             return {
-                "user_agents": paginated,
+                "user_agents": [
+                    {"user_agent": row.user_agent, "count": row.count}
+                    for row in results
+                ],
                 "pagination": {
                     "page": page,
                     "page_size": page_size,
@@ -1841,6 +1955,7 @@ class DatabaseManager:
         page_size: int = 5,
         sort_by: str = "timestamp",
         sort_order: str = "desc",
+        ip_filter: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Retrieve paginated list of detected attack types with access logs.
@@ -1850,6 +1965,7 @@ class DatabaseManager:
             page_size: Number of results per page
             sort_by: Field to sort by (timestamp, ip, attack_type)
             sort_order: Sort order (asc or desc)
+            ip_filter: Optional IP address to filter results
 
         Returns:
             Dictionary with attacks list and pagination info
@@ -1865,18 +1981,22 @@ class DatabaseManager:
                 sort_order.lower() if sort_order.lower() in {"asc", "desc"} else "desc"
             )
 
+            # Base query filter
+            base_filters = []
+            if ip_filter:
+                base_filters.append(AccessLog.ip == ip_filter)
+
             # Count total unique access logs with attack detections
-            total_attacks = (
-                session.query(AccessLog)
-                .join(AttackDetection)
-                .distinct(AccessLog.id)
-                .count()
-            )
+            count_query = session.query(AccessLog).join(AttackDetection)
+            if base_filters:
+                count_query = count_query.filter(*base_filters)
+            total_attacks = count_query.distinct(AccessLog.id).count()
 
             # Get paginated access logs with attack detections
-            query = (
-                session.query(AccessLog).join(AttackDetection).distinct(AccessLog.id)
-            )
+            query = session.query(AccessLog).join(AttackDetection)
+            if base_filters:
+                query = query.filter(*base_filters)
+            query = query.distinct(AccessLog.id)
 
             if sort_by == "timestamp":
                 query = query.order_by(
@@ -1939,12 +2059,15 @@ class DatabaseManager:
         finally:
             self.close_session()
 
-    def get_attack_types_stats(self, limit: int = 20) -> Dict[str, Any]:
+    def get_attack_types_stats(
+        self, limit: int = 20, ip_filter: str | None = None
+    ) -> Dict[str, Any]:
         """
         Get aggregated statistics for attack types (efficient for large datasets).
 
         Args:
             limit: Maximum number of attack types to return
+            ip_filter: Optional IP address to filter results for
 
         Returns:
             Dictionary with attack type counts
@@ -1954,12 +2077,18 @@ class DatabaseManager:
             from sqlalchemy import func
 
             # Aggregate attack types with count
+            query = session.query(
+                AttackDetection.attack_type,
+                func.count(AttackDetection.id).label("count"),
+            )
+
+            if ip_filter:
+                query = query.join(
+                    AccessLog, AttackDetection.access_log_id == AccessLog.id
+                ).filter(AccessLog.ip == ip_filter)
+
             results = (
-                session.query(
-                    AttackDetection.attack_type,
-                    func.count(AttackDetection.id).label("count"),
-                )
-                .group_by(AttackDetection.attack_type)
+                query.group_by(AttackDetection.attack_type)
                 .order_by(func.count(AttackDetection.id).desc())
                 .limit(limit)
                 .all()
@@ -1969,6 +2098,126 @@ class DatabaseManager:
                 "attack_types": [
                     {"type": row.attack_type, "count": row.count} for row in results
                 ]
+            }
+        finally:
+            self.close_session()
+
+    def search_attacks_and_ips(
+        self,
+        query: str,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Dict[str, Any]:
+        """
+        Search attacks and IPs matching a query string.
+
+        Searches across AttackDetection (attack_type, matched_pattern),
+        AccessLog (ip, path), and IpStats (ip, city, country, isp, asn_org).
+
+        Args:
+            query: Search term (partial match)
+            page: Page number (1-indexed)
+            page_size: Results per page
+
+        Returns:
+            Dictionary with matching attacks, ips, and pagination info
+        """
+        session = self.session
+        try:
+            offset = (page - 1) * page_size
+            like_q = f"%{query}%"
+
+            # --- Search attacks (AccessLog + AttackDetection) ---
+            attack_query = (
+                session.query(AccessLog)
+                .join(AttackDetection)
+                .filter(
+                    or_(
+                        AccessLog.ip.ilike(like_q),
+                        AccessLog.path.ilike(like_q),
+                        AttackDetection.attack_type.ilike(like_q),
+                        AttackDetection.matched_pattern.ilike(like_q),
+                    )
+                )
+                .distinct(AccessLog.id)
+            )
+
+            total_attacks = attack_query.count()
+            attack_logs = (
+                attack_query.order_by(AccessLog.timestamp.desc())
+                .offset(offset)
+                .limit(page_size)
+                .all()
+            )
+
+            attacks = [
+                {
+                    "id": log.id,
+                    "ip": log.ip,
+                    "path": log.path,
+                    "user_agent": log.user_agent,
+                    "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+                    "attack_types": [d.attack_type for d in log.attack_detections],
+                    "log_id": log.id,
+                }
+                for log in attack_logs
+            ]
+
+            # --- Search IPs (IpStats) ---
+            ip_query = session.query(IpStats).filter(
+                or_(
+                    IpStats.ip.ilike(like_q),
+                    IpStats.city.ilike(like_q),
+                    IpStats.country.ilike(like_q),
+                    IpStats.country_code.ilike(like_q),
+                    IpStats.isp.ilike(like_q),
+                    IpStats.asn_org.ilike(like_q),
+                    IpStats.reverse.ilike(like_q),
+                )
+            )
+
+            total_ips = ip_query.count()
+            ips = (
+                ip_query.order_by(IpStats.total_requests.desc())
+                .offset(offset)
+                .limit(page_size)
+                .all()
+            )
+
+            ip_results = [
+                {
+                    "ip": stat.ip,
+                    "total_requests": stat.total_requests,
+                    "first_seen": (
+                        stat.first_seen.isoformat() if stat.first_seen else None
+                    ),
+                    "last_seen": stat.last_seen.isoformat() if stat.last_seen else None,
+                    "country_code": stat.country_code,
+                    "city": stat.city,
+                    "category": stat.category,
+                    "isp": stat.isp,
+                    "asn_org": stat.asn_org,
+                }
+                for stat in ips
+            ]
+
+            total = total_attacks + total_ips
+            total_pages = max(
+                1, (max(total_attacks, total_ips) + page_size - 1) // page_size
+            )
+
+            return {
+                "attacks": attacks,
+                "ips": ip_results,
+                "query": query,
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "total_attacks": total_attacks,
+                    "total_ips": total_ips,
+                    "total": total,
+                    "total_pages": total_pages,
+                },
             }
         finally:
             self.close_session()

@@ -31,28 +31,44 @@
     {# Stats cards - server-rendered #}
     {% include "dashboard/partials/stats_cards.html" %}
 
+    {# Search bar #}
+    <div class="search-bar-container">
+        <div class="search-bar">
+            <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/>
+            </svg>
+            <input id="search-input"
+                   type="search"
+                   name="q"
+                   placeholder="Search attacks, IPs, patterns, locations..."
+                   autocomplete="off"
+                   hx-get="{{ dashboard_path }}/htmx/search"
+                   hx-trigger="input changed delay:300ms, search"
+                   hx-target="#search-results-container"
+                   hx-swap="innerHTML"
+                   hx-indicator="#search-spinner" />
+            <span id="search-spinner" class="htmx-indicator search-spinner"></span>
+        </div>
+        <div id="search-results-container"></div>
+    </div>
+
     {# Tab navigation - Alpine.js #}
     <div class="tabs-container">
         <a class="tab-button" :class="{ active: tab === 'overview' }" @click.prevent="switchToOverview()" href="#overview">Overview</a>
         <a class="tab-button" :class="{ active: tab === 'attacks' }" @click.prevent="switchToAttacks()" href="#ip-stats">Attacks</a>
+        <a class="tab-button" :class="{ active: tab === 'ip-insight', disabled: !insightIp }" @click.prevent="insightIp && switchToIpInsight()" href="#ip-insight">
+            IP Insight<span x-show="insightIp" x-text="' (' + insightIp + ')'"></span>
+        </a>
     </div>
 
     {# ==================== OVERVIEW TAB ==================== #}
-    <div x-show="tab === 'overview'">
+    <div x-show="tab === 'overview'" x-init="$nextTick(() => { if (!mapInitialized && typeof initializeAttackerMap === 'function') { initializeAttackerMap(); mapInitialized = true; } })">
 
-        {# Suspicious Activity - server-rendered #}
+        {# Map section #}
+        {% include "dashboard/partials/map_section.html" %}
+
+        {# Suspicious Activity - server-rendered (last 10 requests) #}
         {% include "dashboard/partials/suspicious_table.html" %}
-
-        {# Honeypot Triggers - HTMX loaded #}
-        <div class="table-container alert-section">
-            <h2>Honeypot Triggers by IP</h2>
-            <div class="htmx-container"
-                 hx-get="{{ dashboard_path }}/htmx/honeypot?page=1"
-                 hx-trigger="load"
-                 hx-swap="innerHTML">
-                <div class="htmx-indicator">Loading...</div>
-            </div>
-        </div>
 
         {# Top IPs + Top User-Agents side by side #}
         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
@@ -91,9 +107,6 @@
     {# ==================== ATTACKS TAB ==================== #}
     <div x-show="tab === 'attacks'" x-cloak>
 
-        {# Map section #}
-        {% include "dashboard/partials/map_section.html" %}
-
         {# Attackers table - HTMX loaded #}
         <div class="table-container alert-section">
             <h2>Attackers by Total Requests</h2>
@@ -110,6 +123,17 @@
             <h2>Captured Credentials</h2>
             <div class="htmx-container"
                  hx-get="{{ dashboard_path }}/htmx/credentials?page=1"
+                 hx-trigger="revealed"
+                 hx-swap="innerHTML">
+                <div class="htmx-indicator">Loading...</div>
+            </div>
+        </div>
+
+        {# Honeypot Triggers - HTMX loaded #}
+        <div class="table-container alert-section">
+            <h2>Honeypot Triggers by IP</h2>
+            <div class="htmx-container"
+                 hx-get="{{ dashboard_path }}/htmx/honeypot?page=1"
                  hx-trigger="revealed"
                  hx-swap="innerHTML">
                 <div class="htmx-indicator">Loading...</div>
@@ -144,6 +168,19 @@
                     <div class="htmx-indicator">Loading...</div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    {# ==================== IP INSIGHT TAB ==================== #}
+    <div x-show="tab === 'ip-insight'" x-cloak>
+        {# IP Insight content - loaded via HTMX when IP is selected #}
+        <div id="ip-insight-container">
+            <template x-if="!insightIp">
+                <div class="table-container" style="text-align: center; padding: 60px 20px;">
+                    <p style="color: #8b949e; font-size: 16px;">Select an IP address from any table to view detailed insights.</p>
+                </div>
+            </template>
+            <div x-show="insightIp" id="ip-insight-htmx-container"></div>
         </div>
     </div>
 
