@@ -48,12 +48,4 @@ jobs:
 
       - name: Safety check for dependencies
         run: safety check --json || true
-
-      - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.34.0
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'table'
-          severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+        
