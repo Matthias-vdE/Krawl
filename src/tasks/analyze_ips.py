@@ -220,7 +220,7 @@ def main():
         if len(user_agents_used) >= user_agents_used_threshold:
             score["attacker"]["different_user_agents"] = True
             score["good_crawler"]["different_user_agents"] = False
-            score["bad_crawler"]["different_user_agentss"] = True
+            score["bad_crawler"]["different_user_agents"] = True
             score["regular_user"]["different_user_agents"] = False
         else:
             score["attacker"]["different_user_agents"] = False
