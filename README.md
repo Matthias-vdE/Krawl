@@ -298,7 +298,7 @@ Contributions welcome! Please:
 <div align="center">
 
 ## Disclaimer
-> [! **This is a deception/honeypot system.**]
+> [!CAUTION] **This is a deception/honeypot system.**
 >
 > Deploy in isolated environments and monitor carefully for security events.
 > Use responsibly and in compliance with applicable laws and regulations.
