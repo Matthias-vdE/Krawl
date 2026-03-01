@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: ghcr.io/blessedrebus/krawl
   pullPolicy: Always
-  tag: "1.0.0"
+  tag: "1.1.0"
 
 imagePullSecrets: []
 nameOverride: "krawl"
@@ -53,13 +53,6 @@ resources:
 # Set this to change timezone (e.g., "America/New_York", "Europe/Rome")
 # If not set, container will use its default timezone
 timezone: ""
-
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 1
-  targetCPUUtilizationPercentage: 70
-  targetMemoryUtilizationPercentage: 80
 
 nodeSelector: {}
 
