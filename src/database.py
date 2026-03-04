@@ -815,24 +815,25 @@ class DatabaseManager:
     def flag_stale_ips_for_reevaluation(self) -> int:
         """
         Flag IPs for reevaluation where:
-        - last_seen is between 5 and 30 days ago
+        - last_seen is newer than the configured retention period
         - last_analysis is more than 5 days ago
 
         Returns:
             Number of IPs flagged for reevaluation
         """
+        from config import get_config
+
         session = self.session
         try:
             now = datetime.now()
-            last_seen_lower = now - timedelta(days=30)
-            last_seen_upper = now - timedelta(days=5)
+            retention_days = get_config().database_retention_days
+            last_seen_cutoff = now - timedelta(days=retention_days)
             last_analysis_cutoff = now - timedelta(days=5)
 
             count = (
                 session.query(IpStats)
                 .filter(
-                    IpStats.last_seen >= last_seen_lower,
-                    IpStats.last_seen <= last_seen_upper,
+                    IpStats.last_seen >= last_seen_cutoff,
                     IpStats.last_analysis <= last_analysis_cutoff,
                     IpStats.need_reevaluation == False,
                     IpStats.manual_category == False,
@@ -882,6 +883,7 @@ class DatabaseManager:
         ip_filter: Optional[str] = None,
         suspicious_only: bool = False,
         since_minutes: Optional[int] = None,
+        sort_order: str = "desc",
     ) -> Dict[str, Any]:
         """
         Retrieve access logs with pagination and optional filtering.
@@ -892,6 +894,7 @@ class DatabaseManager:
             ip_filter: Filter by IP address
             suspicious_only: Only return suspicious requests
             since_minutes: Only return logs from the last N minutes
+            sort_order: Sort direction for timestamp ('asc' or 'desc')
 
         Returns:
             List of access log dictionaries
@@ -899,7 +902,12 @@ class DatabaseManager:
         session = self.session
         try:
             offset = (page - 1) * page_size
-            query = session.query(AccessLog).order_by(AccessLog.timestamp.desc())
+            order = (
+                AccessLog.timestamp.asc()
+                if sort_order == "asc"
+                else AccessLog.timestamp.desc()
+            )
+            query = session.query(AccessLog).order_by(order)
 
             if ip_filter:
                 query = query.filter(AccessLog.ip == sanitize_ip(ip_filter))
@@ -1503,6 +1511,7 @@ class DatabaseManager:
                     "path": log.path,
                     "user_agent": log.user_agent,
                     "timestamp": log.timestamp.isoformat(),
+                    "log_id": log.id,
                 }
                 for log in logs
             ]
