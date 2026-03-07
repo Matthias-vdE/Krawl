@@ -74,7 +74,9 @@ async def lifespan(app: FastAPI):
 
     password_line = ""
     if config.dashboard_password_generated:
-        password_line = f"\n\nDASHBOARD PASSWORD (auto-generated)\n{config.dashboard_password}"
+        password_line = (
+            f"\n\nDASHBOARD PASSWORD (auto-generated)\n{config.dashboard_password}"
+        )
 
     banner = f"""
 

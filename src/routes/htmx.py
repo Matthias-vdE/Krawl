@@ -421,9 +421,9 @@ async def htmx_admin(request: Request):
         return HTMLResponse(
             '<div class="table-container" style="text-align:center;padding:80px 20px;">'
             '<h1 style="color:#f0883e;font-size:48px;margin:20px 0 10px;">Nice try bozo</h1>'
-            '<br>'
+            "<br>"
             '<img src="https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyaHQ3dHRuN2wyOW1kZndjaHdkY2dhYzJ6d2gzMDJkNm53ZnNrdnNlZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/mOY97EXNisstZqJht9/200w.gif" alt="Diddy">'
-            '</div>',
+            "</div>",
             status_code=200,
         )
     templates = get_templates()
