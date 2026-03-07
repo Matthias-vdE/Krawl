@@ -136,8 +136,22 @@ document.addEventListener('alpine:init', () => {
                     this.closeAuthModal();
                     this.switchToAdmin();
                 } else {
-                    this.authModal.error = 'Invalid password';
+                    const data = await resp.json().catch(() => ({}));
+                    this.authModal.error = data.error || 'Invalid password';
+                    this.authModal.password = '';
                     this.authModal.loading = false;
+                    if (data.locked && data.retry_after) {
+                        let remaining = data.retry_after;
+                        const interval = setInterval(() => {
+                            remaining--;
+                            if (remaining <= 0) {
+                                clearInterval(interval);
+                                this.authModal.error = '';
+                            } else {
+                                this.authModal.error = `Too many attempts. Try again in ${remaining}s`;
+                            }
+                        }, 1000);
+                    }
                 }
             } catch {
                 this.authModal.error = 'Authentication failed';
