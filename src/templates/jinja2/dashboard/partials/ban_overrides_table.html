@@ -39,7 +39,7 @@
                     <span class="ban-override-badge ban-override-unbanned">Force Unbanned</span>
                 {% endif %}
             </td>
-            <td><span class="category-badge category-{{ ip.category | default('unknown') }}">{{ ip.category | default('unknown') | e }}</span></td>
+            <td><span class="category-badge category-{{ ip.category | default('unknown') | replace('_', '-') }}">{{ ip.category | default('unknown') | replace('_', ' ') | title }}</span></td>
             <td>{{ ip.total_requests }}</td>
             <td>{{ ip.city | default('') | e }}{% if ip.city and ip.country_code %}, {% endif %}{{ ip.country_code | default('N/A') | e }}</td>
             <td>{{ ip.last_seen | format_ts }}</td>

@@ -716,9 +716,8 @@ tbody {
     min-width: 0;
 }
 .ip-attack-chart-wrapper {
-    flex: 1;
     position: relative;
-    min-height: 180px;
+    height: 220px;
 }
 
 /* Radar chart */
