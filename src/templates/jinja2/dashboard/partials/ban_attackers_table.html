@@ -36,7 +36,7 @@
             <td>{{ ip.city | default('') | e }}{% if ip.city and ip.country_code %}, {% endif %}{{ ip.country_code | default('N/A') | e }}</td>
             <td>{{ ip.last_seen | format_ts }}</td>
             <td>
-                <button class="ban-icon-btn ban-icon-unban" onclick="banAction('{{ ip.ip | e }}', 'unban')" title="Unban">
+                <button class="ban-icon-btn ban-icon-unban" onclick="ipBanAction('{{ ip.ip | e }}', 'unban')" title="Unban">
                     <span class="material-symbols-outlined">health_and_safety</span>
                     <span class="ban-icon-tooltip">Unban</span>
                 </button>

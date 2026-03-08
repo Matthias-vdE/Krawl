@@ -332,6 +332,13 @@ window.ipBanAction = async function(ip, action) {
         const result = await resp.json().catch(() => ({}));
         if (resp.ok) {
             krawlModal.success(result.message || `${action} successful for ${ip}`);
+            const overrides = document.getElementById('overrides-container');
+            if (overrides) {
+                htmx.ajax('GET', `${window.__DASHBOARD_PATH__}/htmx/ban/overrides?page=1`, {
+                    target: '#overrides-container',
+                    swap: 'innerHTML'
+                });
+            }
         } else {
             krawlModal.error(result.error || `Failed to ${action} IP ${ip}`);
         }

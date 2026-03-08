@@ -98,31 +98,4 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 
-async function banAction(ip, action) {
-    const confirmed = await krawlModal.confirm(`Are you sure you want to ${action} IP <strong>${ip}</strong>?`);
-    if (!confirmed) return;
-    try {
-        const resp = await fetch(`${window.__DASHBOARD_PATH__}/api/ban-override`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ ip, action }),
-        });
-        if (resp.ok) {
-            krawlModal.success(`${action} successful for ${ip}`);
-            const overrides = document.getElementById('overrides-container');
-            if (overrides) {
-                htmx.ajax('GET', `${window.__DASHBOARD_PATH__}/htmx/ban/overrides?page=1`, {
-                    target: '#overrides-container',
-                    swap: 'innerHTML'
-                });
-            }
-        } else {
-            const result = await resp.json().catch(() => ({}));
-            krawlModal.error(result.error || `Failed to ${action} IP ${ip}`);
-        }
-    } catch {
-        krawlModal.error('Request failed');
-    }
-}
 </script>
