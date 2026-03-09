@@ -2380,7 +2380,10 @@ class DatabaseManager:
         session = self.session
         sanitized_ip = sanitize_ip(ip)
         try:
-            return session.query(TrackedIp).filter(TrackedIp.ip == sanitized_ip).first() is not None
+            return (
+                session.query(TrackedIp).filter(TrackedIp.ip == sanitized_ip).first()
+                is not None
+            )
         finally:
             self.close_session()
 
@@ -2405,15 +2408,19 @@ class DatabaseManager:
 
             items = []
             for t in tracked_rows:
-                items.append({
-                    "ip": t.ip,
-                    "tracked_since": t.tracked_since.isoformat() if t.tracked_since else None,
-                    "category": t.category,
-                    "total_requests": t.total_requests or 0,
-                    "country_code": t.country_code,
-                    "city": t.city,
-                    "last_seen": t.last_seen.isoformat() if t.last_seen else None,
-                })
+                items.append(
+                    {
+                        "ip": t.ip,
+                        "tracked_since": (
+                            t.tracked_since.isoformat() if t.tracked_since else None
+                        ),
+                        "category": t.category,
+                        "total_requests": t.total_requests or 0,
+                        "country_code": t.country_code,
+                        "city": t.city,
+                        "last_seen": t.last_seen.isoformat() if t.last_seen else None,
+                    }
+                )
 
             return {
                 "tracked_ips": items,
