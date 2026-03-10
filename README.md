@@ -43,7 +43,7 @@
   - [Docker Run](#docker-run)
   - [Docker Compose](#docker-compose)
   - [Kubernetes](#kubernetes)
-  - [Local (Python)](#local-python)
+  - [Uvicorn (Python)](#uvicorn-python)
 - [Configuration](#configuration)
   - [config.yaml](#configuration-via-configyaml)
   - [Environment Variables](#configuration-via-enviromental-variables)
@@ -139,6 +139,7 @@ services:
     environment:
       - CONFIG_LOCATION=config.yaml
       - TZ=Europe/Rome
+      # - KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
       # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
     volumes:
       - ./config.yaml:/app/config.yaml:ro
@@ -166,7 +167,7 @@ docker-compose down
 ### Kubernetes
 **Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the helm chart](helm/README.md).
 
-### Python + Uvicorn
+### Uvicorn (Python)
 
 Run Krawl directly with Python (suggested version 13) and uvicorn for local development or testing:
 
