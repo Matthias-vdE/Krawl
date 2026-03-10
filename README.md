@@ -90,27 +90,27 @@ Krawl provides a comprehensive dashboard, accessible at a **random secret path**
 
 The dashboard is organized in five tabs:
 
-- **Overview** — High-level view of attack activity: an interactive map of IP origins, recent suspicious requests, and top IPs, User-Agents, and paths.
+- **Overview**: high-level view of attack activity: an interactive map of IP origins, recent suspicious requests, and top IPs, User-Agents, and paths.
 
 ![geoip](img/geoip_dashboard.png)
 
-- **Attacks** — Detailed breakdown of captured credentials, honeypot triggers, and detected attack types (SQLi, XSS, path traversal, etc.) with charts and tables.
+- **Attacks**: detailed breakdown of captured credentials, honeypot triggers, and detected attack types (SQLi, XSS, path traversal, etc.) with charts and tables.
 
 ![attack_types](img/attack_types.png)
 
-- **IP Insight** — In-depth forensic view of a selected IP: geolocation, ISP/ASN info, reputation flags, behavioral timeline, attack type distribution, and full access history.
+- **IP Insight**: in-depth forensic view of a selected IP: geolocation, ISP/ASN info, reputation flags, behavioral timeline, attack type distribution, and full access history.
 
 ![ipinsight](img/ip_insight_dashboard.png)
 
 Additionally, after authenticating with the dashboard password, two protected tabs become available:
 
-- **Tracked IPs** — Maintain a watchlist of IP addresses you want to monitor over time.
-- **IP Banlist** — Manage IP bans, view detected attackers, and export the banlist in raw or IPTables format.
+- **Tracked IPs**: maintain a watchlist of IP addresses you want to monitor over time.
+- **IP Banlist**: manage IP bans, view detected attackers, and export the banlist in raw or IPTables format.
 
 For more details, see the [Dashboard documentation](docs/dashboard.md).
 
 
-## 🚀 Installation
+## Installation
 
 ### Docker Run
 
@@ -313,7 +313,7 @@ location / {
 | [Wordlist](docs/wordlist.md) | Customize fake usernames, passwords, and directory listings |
 | [Dashboard](docs/dashboard.md) | Access and explore the real-time monitoring dashboard |
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! Please:
 1. Fork the repository
