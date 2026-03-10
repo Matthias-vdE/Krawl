@@ -39,7 +39,7 @@
 - [Demo](#demo)
 - [What is Krawl?](#what-is-krawl)
 - [Krawl Dashboard](#krawl-dashboard)
-- [Installation](#-installation)
+- [Quickstart](#quickstart)
   - [Docker Run](#docker-run)
   - [Docker Compose](#docker-compose)
   - [Kubernetes](#kubernetes)
@@ -110,7 +110,7 @@ Additionally, after authenticating with the dashboard password, two protected ta
 For more details, see the [Dashboard documentation](docs/dashboard.md).
 
 
-## Installation
+## Quickstart
 
 ### Docker Run
 
