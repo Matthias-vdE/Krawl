@@ -51,7 +51,7 @@
 - [IP Reputation](#ip-reputation)
 - [Forward Server Header](#forward-server-header)
 - [Additional Documentation](#additional-documentation)
-- [Contributing](#-contributing)
+- [Contributing](#contributing)
 
 ## Demo
 Tip: crawl the `robots.txt` paths for additional fun
