@@ -88,7 +88,7 @@ You can easily expose Krawl alongside your other services to shield them from we
 
 Krawl provides a comprehensive dashboard, accessible at a **random secret path** generated at startup or at a **custom path** configured via `KRAWL_DASHBOARD_SECRET_PATH`. This keeps the dashboard hidden from attackers scanning your honeypot.
 
-The dashboard is organized in three main tabs:
+The dashboard is organized in five tabs:
 
 - **Overview** — High-level view of attack activity: an interactive map of IP origins, recent suspicious requests, and top IPs, User-Agents, and paths.
 
@@ -101,6 +101,11 @@ The dashboard is organized in three main tabs:
 - **IP Insight** — In-depth forensic view of a selected IP: geolocation, ISP/ASN info, reputation flags, behavioral timeline, attack type distribution, and full access history.
 
 ![ipinsight](img/ip_insight_dashboard.png)
+
+Additionally, after authenticating with the dashboard password, two protected tabs become available:
+
+- **Tracked IPs** — Maintain a watchlist of IP addresses you want to monitor over time.
+- **IP Banlist** — Manage IP bans, view detected attackers, and export the banlist in raw or IPTables format.
 
 For more details, see the [Dashboard documentation](docs/dashboard.md).
 
