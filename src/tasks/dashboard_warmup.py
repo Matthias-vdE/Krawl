@@ -16,7 +16,7 @@ app_logger = get_app_logger()
 # ----------------------
 TASK_CONFIG = {
     "name": "dashboard-warmup",
-    "cron": "*/1 * * * *",
+    "cron": "*/5 * * * *",
     "enabled": True,
     "run_when_loaded": True,
 }

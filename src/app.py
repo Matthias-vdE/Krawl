@@ -5,6 +5,7 @@ FastAPI application factory for the Krawl honeypot.
 Replaces the old http.server-based server.py.
 """
 
+import gc
 import sys
 import os
 from contextlib import asynccontextmanager
@@ -23,6 +24,8 @@ from generators import random_server_header
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
+    gc.set_threshold(700, 10, 5)
+
     config = get_config()
 
     # Initialize logging
