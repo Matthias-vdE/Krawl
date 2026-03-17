@@ -30,6 +30,11 @@ dashboard:
   # Can also be set via KRAWL_DASHBOARD_PASSWORD env var.
   password: null
 
+  # Enable background cache warmup task for the dashboard.
+  # When enabled, dashboard data is pre-computed every 5 minutes for instant page loads.
+  # When disabled, all dashboard queries hit the database directly on each request.
+  cache_warmup: true
+
 backups:
   path: "backups"
   cron: "*/30 * * * *"

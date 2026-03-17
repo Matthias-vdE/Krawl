@@ -30,6 +30,7 @@ class Config:
     dashboard_secret_path: str = None
     dashboard_password: Optional[str] = None
     dashboard_password_generated: bool = False
+    dashboard_cache_warmup: bool = True
     probability_error_codes: int = 0  # Percentage (0-100)
 
     # Crawl limiting settings - for legitimate vs malicious crawlers
@@ -207,6 +208,7 @@ class Config:
             dashboard_secret_path=dashboard_path,
             dashboard_password=dashboard_password,
             dashboard_password_generated=dashboard_password_generated,
+            dashboard_cache_warmup=dashboard.get("cache_warmup", True),
             probability_error_codes=behavior.get("probability_error_codes", 0),
             exports_path=exports.get("path", "exports"),
             backups_path=backups.get("path", "backups"),
