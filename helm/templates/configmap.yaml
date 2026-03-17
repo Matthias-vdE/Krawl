@@ -34,6 +34,7 @@ data:
     database:
       path: {{ .Values.config.database.path | quote }}
       retention_days: {{ .Values.config.database.retention_days }}
+      persist_suspicious_only: {{ .Values.config.database.persist_suspicious_only }}
     behavior:
       probability_error_codes: {{ .Values.config.behavior.probability_error_codes }}
     analyzer:

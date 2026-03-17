@@ -50,6 +50,7 @@ class Config:
     # Database settings
     database_path: str = "data/krawl.db"
     database_retention_days: int = 30
+    database_persist_suspicious_only: bool = False
 
     # Analyzer settings
     http_risky_methods_threshold: float = None
@@ -216,6 +217,7 @@ class Config:
             backups_cron=backups.get("cron"),
             database_path=database.get("path", "data/krawl.db"),
             database_retention_days=database.get("retention_days", 30),
+            database_persist_suspicious_only=database.get("persist_suspicious_only", False),
             http_risky_methods_threshold=analyzer.get(
                 "http_risky_methods_threshold", 0.1
             ),

@@ -49,6 +49,10 @@ logging:
 database:
   path: "data/krawl.db"
   retention_days: 30
+  # Only persist suspicious requests to the access log.
+  # When enabled, non-suspicious requests still increment IP stats counters
+  # but won't be stored as individual access log entries, saving disk I/O.
+  persist_suspicious_only: false
 
 behavior:
   probability_error_codes: 0  # 0-100 percentage
