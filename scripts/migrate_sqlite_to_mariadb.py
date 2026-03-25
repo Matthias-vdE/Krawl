@@ -30,7 +30,7 @@ import os
 # Add src/ to path so we can import models
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from sqlalchemy import create_engine, text, inspect, event
+from sqlalchemy import create_engine, text, inspect, event, Integer, Float, Boolean
 from sqlalchemy.orm import sessionmaker
 
 from models import (
@@ -106,9 +106,14 @@ def migrate_table(
 
     print(f"  {table_name}: {total} rows to migrate...")
 
-    # Get column names from the model
+    # Get column names and their types from the model for data sanitization
     mapper = inspect(model_class)
     columns = [c.key for c in mapper.column_attrs]
+
+    # Build a map of column name -> SQLAlchemy type for sanitization
+    col_types = {}
+    for col in model_class.__table__.columns:
+        col_types[col.name] = col.type
 
     migrated = 0
     offset = 0
@@ -124,7 +129,14 @@ def migrate_table(
         for row in rows:
             row_dict = {}
             for col in columns:
-                row_dict[col] = getattr(row, col)
+                value = getattr(row, col)
+                # Sanitize: SQLite allows empty strings in Integer/Float/Boolean columns,
+                # MariaDB does not. Convert empty strings to None for non-string columns.
+                if isinstance(value, str) and value == "" and col in col_types:
+                    col_type = col_types[col]
+                    if isinstance(col_type, (Integer, Float, Boolean)):
+                        value = None
+                row_dict[col] = value
             batch_data.append(row_dict)
 
         try:
