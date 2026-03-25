@@ -143,6 +143,9 @@ redis:
   port: 6379
   db: 0
   password: null
+  cache_ttl: 600    # Dashboard warmup data TTL (seconds)
+  hot_ttl: 30       # Hot-path cache TTL (ban info, IP categories)
+  table_ttl: 120    # Paginated dashboard table TTL
 ```
 
 Or via environment variables:
@@ -154,6 +157,9 @@ KRAWL_MARIADB_USER=krawl
 KRAWL_MARIADB_PASSWORD=krawl
 KRAWL_MARIADB_DATABASE=krawl
 KRAWL_REDIS_HOST=redis
+# KRAWL_REDIS_CACHE_TTL=600
+# KRAWL_REDIS_HOT_TTL=30
+# KRAWL_REDIS_TABLE_TTL=120
 ```
 
 For detailed instructions on running scalable mode with Docker Compose, Kubernetes/Helm, and migrating existing data from SQLite to MariaDB, see the [Deployment Modes documentation](docs/deployment-modes.md).

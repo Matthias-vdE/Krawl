@@ -84,7 +84,7 @@ config:
     token_tries: 10
   dashboard:
     secret_path: null  # Auto-generated if not set, or set to "/my-secret-dashboard"
-    cache_warmup: true  # Pre-compute dashboard data every 5 minutes for instant page loads
+    cache_warmup: true  # Pre-compute dashboard data every 5 minutes. In scalable mode with Redis, consider setting to false — table caching handles it.
   backups:
     path: "backups"
     enabled: false
@@ -149,6 +149,10 @@ redis:
   port: 6379
   db: 0
   password: ""
+  # Cache TTL settings (seconds)
+  cache_ttl: 600    # Dashboard warmup data (default: 10 minutes)
+  hot_ttl: 30       # Hot-path data like ban info (default: 30 seconds)
+  table_ttl: 120    # Paginated dashboard tables (default: 2 minutes)
   # Use an existing secret for the Redis password instead of plaintext
   # existingSecret: ""
   # existingSecretKey: "redis-password"
