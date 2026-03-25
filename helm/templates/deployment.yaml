@@ -87,6 +87,12 @@ spec:
               name: {{ include "krawl.fullname" . }}-redis
               key: redis-password
         {{- end }}
+        - name: KRAWL_REDIS_CACHE_TTL
+          value: {{ .Values.redis.cache_ttl | default 600 | quote }}
+        - name: KRAWL_REDIS_HOT_TTL
+          value: {{ .Values.redis.hot_ttl | default 30 | quote }}
+        - name: KRAWL_REDIS_TABLE_TTL
+          value: {{ .Values.redis.table_ttl | default 120 | quote }}
         {{- end }}
         volumeMounts:
         - name: config
