@@ -53,9 +53,18 @@ async def lifespan(app: FastAPI):
             initialize_database(config.database_path)
         app_logger.info("Database ready")
     except Exception as e:
-        app_logger.warning(
-            f"Database initialization failed: {e}. Continuing with in-memory only."
-        )
+        if config.mode == "scalable":
+            app_logger.error(
+                f"Database initialization failed in scalable mode: {e}. "
+                "Cannot safely continue without MariaDB; exiting."
+            )
+            import sys
+
+            sys.exit(1)
+        else:
+            app_logger.warning(
+                f"Database initialization failed: {e}. Continuing with in-memory only."
+            )
 
     # Initialize cache backend (in-memory dict for standalone, Redis for scalable)
     try:

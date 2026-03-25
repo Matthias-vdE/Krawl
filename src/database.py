@@ -76,10 +76,16 @@ class DatabaseManager:
 
         if mode == "scalable":
             mariadb_config = mariadb_config or {}
-            database_url = (
-                f"mysql+pymysql://{mariadb_config['user']}:{mariadb_config['password']}"
-                f"@{mariadb_config['host']}:{mariadb_config['port']}"
-                f"/{mariadb_config['database']}?charset=utf8mb4"
+            from sqlalchemy.engine import URL
+
+            database_url = URL.create(
+                drivername="mysql+pymysql",
+                username=mariadb_config.get("user", "krawl"),
+                password=mariadb_config.get("password", ""),
+                host=mariadb_config.get("host", "localhost"),
+                port=int(mariadb_config.get("port", 3306)),
+                database=mariadb_config.get("database", "krawl"),
+                query={"charset": "utf8mb4"},
             )
             self._engine = create_engine(
                 database_url,
@@ -421,6 +427,13 @@ class DatabaseManager:
                 ip_stats.ban_timestamp = datetime.now()
 
             session.commit()
+
+            # Invalidate cached ban info so the new ban is enforced immediately
+            if ip_stats.ban_timestamp is not None:
+                from dashboard_cache import delete_cached_short
+
+                delete_cached_short(f"ban:{sanitized_ip}")
+
             return ip_stats.page_visit_count
 
         except Exception as e:
@@ -1157,17 +1170,19 @@ class DatabaseManager:
         """
         from dashboard_cache import get_cached_short, set_cached_short
 
+        safe_ip = sanitize_ip(ip)
+
         # Check Redis short-TTL cache first (scalable mode only)
-        cached = get_cached_short(f"ipstats:{ip}")
+        cached = get_cached_short(f"ipstats:{safe_ip}")
         if cached is not None:
             return cached if cached != "__none__" else None
 
         session = self.session
         try:
-            stat = session.query(IpStats).filter(IpStats.ip == ip).first()
+            stat = session.query(IpStats).filter(IpStats.ip == safe_ip).first()
 
             if not stat:
-                set_cached_short(f"ipstats:{ip}", "__none__")
+                set_cached_short(f"ipstats:{safe_ip}", "__none__")
                 return None
 
             # Get category history for this IP
@@ -1204,7 +1219,7 @@ class DatabaseManager:
                 ),
                 "category_history": category_history,
             }
-            set_cached_short(f"ipstats:{ip}", result)
+            set_cached_short(f"ipstats:{safe_ip}", result)
             return result
         finally:
             self.close_session()

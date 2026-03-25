@@ -15,7 +15,7 @@ A Helm chart for deploying the Krawl honeypot application on Kubernetes.
 
 ```bash
 helm install krawl oci://ghcr.io/blessedrebus/krawl-chart \
-  --version 1.2.0 \
+  --version 1.3.0 \
   --namespace krawl-system \
   --create-namespace \
   -f values.yaml  # optional
@@ -96,7 +96,7 @@ The following table lists the main configuration parameters of the Krawl chart a
 | `mode` | Deployment mode (`standalone` or `scalable`) | `standalone` |
 | `replicaCount` | Number of pod replicas (>1 only in scalable mode) | `1` |
 | `image.repository` | Image repository | `ghcr.io/blessedrebus/krawl` |
-| `image.tag` | Image tag | `1.2.0` |
+| `image.tag` | Image tag | `1.3.0` |
 | `image.pullPolicy` | Image pull policy | `Always` |
 
 ### Service Configuration
@@ -278,7 +278,7 @@ kubectl get secret krawl-server -n krawl-system \
 ### Standalone with custom settings
 
 ```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.2.0 \
+helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.3.0 \
   --set mode=standalone \
   --set ingress.hosts[0].host=honeypot.example.com \
   --set config.canary.token_url=https://canarytokens.com/your-token
@@ -287,7 +287,7 @@ helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.2.0 \
 ### Scalable with bundled MariaDB and Redis
 
 ```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.2.0 \
+helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.3.0 \
   --set mode=scalable \
   --set replicaCount=3 \
   --set mariadb.enabled=true \
@@ -301,7 +301,7 @@ helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.2.0 \
 ### Scalable with external MariaDB and Redis
 
 ```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.2.0 \
+helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.3.0 \
   --set mode=scalable \
   --set replicaCount=3 \
   --set mariadb.host=your-mariadb-host \
@@ -323,7 +323,7 @@ helm upgrade krawl ./helm \
 ## Upgrading
 
 ```bash
-helm upgrade krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.2.0 -f values.yaml
+helm upgrade krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.3.0 -f values.yaml
 ```
 
 ## Uninstalling

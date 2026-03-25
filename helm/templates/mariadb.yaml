@@ -1,4 +1,5 @@
 {{- if and (eq .Values.mode "scalable") .Values.mariadb.enabled }}
+{{- if .Values.mariadb.persistence.enabled }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -7,7 +8,6 @@ metadata:
   labels:
     {{- include "krawl.labels" . | nindent 4 }}
     app.kubernetes.io/component: mariadb
-{{- if .Values.mariadb.persistence.enabled }}
 spec:
   accessModes:
     - {{ .Values.mariadb.persistence.accessMode }}

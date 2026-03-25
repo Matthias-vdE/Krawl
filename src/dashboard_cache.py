@@ -133,6 +133,17 @@ def set_cached_short(key: str, value: Any) -> None:
         )
 
 
+def delete_cached_short(key: str) -> None:
+    """Delete a hot-path cache entry (scalable mode only).
+
+    Used to immediately invalidate cached ban info or IP stats
+    when the underlying data changes.
+    In standalone mode, this is a no-op.
+    """
+    if _backend == "scalable" and _redis_client is not None:
+        _redis_client.delete(f"{_REDIS_PREFIX}hot:{key}")
+
+
 def get_cached_table(key: str) -> Optional[Any]:
     """Get a cached paginated table result (scalable mode only).
 
