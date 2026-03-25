@@ -1,5 +1,5 @@
 """
-Cache layer for dashboard Overview data.
+Cache layer for dashboard and hot-path data.
 
 Supports two backends based on deployment mode:
 - standalone: in-memory dict with threading lock (default)
@@ -7,6 +7,11 @@ Supports two backends based on deployment mode:
 
 A background task periodically refreshes this cache so the dashboard
 serves pre-computed data instantly instead of hitting the database cold.
+
+In scalable mode, Redis is also used for:
+- Hot-path caching (ban info, IP categories) with short TTLs
+- Dashboard table caching (attackers, credentials, honeypot, etc.)
+- Attack pattern statistics
 
 Memory footprint is fixed — each key is overwritten on every refresh.
 """
@@ -21,7 +26,9 @@ _lock = threading.Lock()
 _cache: dict[str, Any] = {}
 _redis_client = None
 _REDIS_PREFIX = "krawl:cache:"
-_REDIS_TTL = 600  # 10 minutes
+_REDIS_TTL = 600  # 10 minutes for dashboard warmup data
+_REDIS_SHORT_TTL = 30  # 30 seconds for hot-path data (ban info, IP categories)
+_REDIS_TABLE_TTL = 120  # 2 minutes for paginated dashboard tables
 
 
 def _json_serializer(obj):
@@ -59,6 +66,16 @@ def initialize_cache(mode: str = "standalone", redis_config: dict = None) -> Non
         _redis_client.ping()
 
 
+def get_redis_client():
+    """Get the Redis client instance (for use in scalable mode only)."""
+    return _redis_client
+
+
+def get_backend() -> str:
+    """Get the current cache backend mode."""
+    return _backend
+
+
 def get_cached(key: str) -> Optional[Any]:
     """Get a value from the dashboard cache."""
     if _backend == "scalable" and _redis_client is not None:
@@ -69,18 +86,96 @@ def get_cached(key: str) -> Optional[Any]:
         return _cache.get(key)
 
 
-def set_cached(key: str, value: Any) -> None:
-    """Set a value in the dashboard cache."""
+def set_cached(key: str, value: Any, ttl: int = None) -> None:
+    """Set a value in the dashboard cache.
+
+    Args:
+        key: Cache key
+        value: Value to cache (must be JSON-serializable for Redis)
+        ttl: Optional TTL override in seconds (Redis only, defaults to _REDIS_TTL)
+    """
     if _backend == "scalable" and _redis_client is not None:
         _redis_client.setex(
             f"{_REDIS_PREFIX}{key}",
-            _REDIS_TTL,
+            ttl or _REDIS_TTL,
             json.dumps(value, default=_json_serializer),
         )
         return
 
     with _lock:
         _cache[key] = value
+
+
+def get_cached_short(key: str) -> Optional[Any]:
+    """Get a value from the short-TTL hot-path cache (scalable mode only).
+
+    In standalone mode, always returns None (no hot-path caching needed
+    since there's only one process and DB is local).
+    """
+    if _backend == "scalable" and _redis_client is not None:
+        raw = _redis_client.get(f"{_REDIS_PREFIX}hot:{key}")
+        return json.loads(raw) if raw else None
+    return None
+
+
+def set_cached_short(key: str, value: Any) -> None:
+    """Set a value in the short-TTL hot-path cache (scalable mode only).
+
+    Uses a short TTL (30s) for data that changes frequently but is
+    expensive to query on every request (ban info, IP categories).
+    In standalone mode, this is a no-op.
+    """
+    if _backend == "scalable" and _redis_client is not None:
+        _redis_client.setex(
+            f"{_REDIS_PREFIX}hot:{key}",
+            _REDIS_SHORT_TTL,
+            json.dumps(value, default=_json_serializer),
+        )
+
+
+def get_cached_table(key: str) -> Optional[Any]:
+    """Get a cached paginated table result (scalable mode only).
+
+    In standalone mode, always returns None (tables are served live
+    or from the warmup cache).
+    """
+    if _backend == "scalable" and _redis_client is not None:
+        raw = _redis_client.get(f"{_REDIS_PREFIX}table:{key}")
+        return json.loads(raw) if raw else None
+    return None
+
+
+def set_cached_table(key: str, value: Any) -> None:
+    """Cache a paginated table result with medium TTL (scalable mode only).
+
+    Uses a 2-minute TTL for dashboard table data that doesn't need to be
+    real-time but benefits from caching across multiple replicas.
+    In standalone mode, this is a no-op.
+    """
+    if _backend == "scalable" and _redis_client is not None:
+        _redis_client.setex(
+            f"{_REDIS_PREFIX}table:{key}",
+            _REDIS_TABLE_TTL,
+            json.dumps(value, default=_json_serializer),
+        )
+
+
+def invalidate_table_cache() -> None:
+    """Invalidate all cached table data (e.g. after a write operation).
+
+    Useful after ban overrides, IP tracking changes, etc.
+    In standalone mode, this is a no-op.
+    """
+    if _backend == "scalable" and _redis_client is not None:
+        cursor = 0
+        while True:
+            cursor, keys = _redis_client.scan(
+                cursor, match=f"{_REDIS_PREFIX}table:*", count=100
+            )
+            if keys:
+                _redis_client.delete(*keys)
+            if cursor == 0:
+                break
 
 
 def is_warm() -> bool:

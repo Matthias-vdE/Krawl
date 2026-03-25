@@ -471,6 +471,9 @@ class DatabaseManager:
         """
         Get detailed ban information for an IP.
 
+        In scalable mode, results are cached in Redis with a short TTL (30s)
+        to avoid hitting MariaDB on every incoming request.
+
         Args:
             ip: Client IP address
             ban_duration_seconds: Base ban duration in seconds
@@ -478,41 +481,55 @@ class DatabaseManager:
         Returns:
             Dictionary with ban status details
         """
+        from dashboard_cache import get_cached_short, set_cached_short
+
+        sanitized_ip = sanitize_ip(ip)
+
+        # Check Redis short-TTL cache first (scalable mode only)
+        cached = get_cached_short(f"ban:{sanitized_ip}")
+        if cached is not None:
+            return cached
+
         session = self.session
         try:
-            sanitized_ip = sanitize_ip(ip)
             ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
 
             if not ip_stats:
-                return {
+                result = {
                     "is_banned": False,
                     "violations": 0,
                     "ban_multiplier": 1,
                     "remaining_ban_seconds": 0,
                 }
+                set_cached_short(f"ban:{sanitized_ip}", result)
+                return result
 
             violations = ip_stats.total_violations or 0
             multiplier = ip_stats.ban_multiplier or 1
 
             if ip_stats.ban_timestamp is None:
-                return {
+                result = {
                     "is_banned": False,
                     "violations": violations,
                     "ban_multiplier": multiplier,
                     "remaining_ban_seconds": 0,
                 }
+                set_cached_short(f"ban:{sanitized_ip}", result)
+                return result
 
             effective_duration = ban_duration_seconds * multiplier
             elapsed = (datetime.now() - ip_stats.ban_timestamp).total_seconds()
             remaining = max(0, effective_duration - elapsed)
 
-            return {
+            result = {
                 "is_banned": remaining > 0,
                 "violations": violations,
                 "ban_multiplier": multiplier,
                 "effective_ban_duration_seconds": effective_duration,
                 "remaining_ban_seconds": remaining,
             }
+            set_cached_short(f"ban:{sanitized_ip}", result)
+            return result
 
         except Exception as e:
             applogger.error(f"Error getting ban info for {ip}: {e}")
@@ -1129,23 +1146,34 @@ class DatabaseManager:
         """
         Retrieve IP statistics for a specific IP address.
 
+        In scalable mode, results are cached in Redis with a short TTL (30s)
+        to reduce DB load for repeated lookups (e.g. IP category checks on every request).
+
         Args:
             ip: The IP address to look up
 
         Returns:
             Dictionary with IP stats or None if not found
         """
+        from dashboard_cache import get_cached_short, set_cached_short
+
+        # Check Redis short-TTL cache first (scalable mode only)
+        cached = get_cached_short(f"ipstats:{ip}")
+        if cached is not None:
+            return cached if cached != "__none__" else None
+
         session = self.session
         try:
             stat = session.query(IpStats).filter(IpStats.ip == ip).first()
 
             if not stat:
+                set_cached_short(f"ipstats:{ip}", "__none__")
                 return None
 
             # Get category history for this IP
             category_history = self.get_category_history(ip)
 
-            return {
+            result = {
                 "ip": stat.ip,
                 "total_requests": stat.total_requests,
                 "first_seen": stat.first_seen.isoformat() if stat.first_seen else None,
@@ -1176,6 +1204,8 @@ class DatabaseManager:
                 ),
                 "category_history": category_history,
             }
+            set_cached_short(f"ipstats:{ip}", result)
+            return result
         finally:
             self.close_session()
 

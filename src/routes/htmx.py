@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from dependencies import get_db, get_templates
 from routes.api import verify_auth
 from config import get_config
-from dashboard_cache import get_cached, is_warm
+from dashboard_cache import get_cached, is_warm, get_cached_table, set_cached_table
 
 router = APIRouter()
 
@@ -31,10 +31,16 @@ async def htmx_honeypot(
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_honeypot_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
-    )
+    cache_key = f"honeypot:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = db.get_honeypot_paginated(
+            page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        )
+        set_cached_table(cache_key, result)
 
     templates = get_templates()
     return templates.TemplateResponse(
@@ -190,10 +196,16 @@ async def htmx_attackers(
     sort_by: str = Query("total_requests"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_attackers_paginated(
-        page=max(1, page), page_size=25, sort_by=sort_by, sort_order=sort_order
-    )
+    cache_key = f"attackers:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = db.get_attackers_paginated(
+            page=max(1, page), page_size=25, sort_by=sort_by, sort_order=sort_order
+        )
+        set_cached_table(cache_key, result)
 
     # Normalize pagination key (DB returns total_attackers, template expects total)
     pagination = result["pagination"]
@@ -225,13 +237,19 @@ async def htmx_access_logs_by_ip(
     sort_order: str = Query("desc"),
     ip_filter: str = Query("ip_filter"),
 ):
-    db = get_db()
-    result = db.get_access_logs_paginated(
-        page=max(1, page),
-        page_size=25,
-        ip_filter=ip_filter,
-        sort_order=sort_order if sort_order in ("asc", "desc") else "desc",
-    )
+    cache_key = f"access_logs:{page}:{sort_by}:{sort_order}:{ip_filter}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = db.get_access_logs_paginated(
+            page=max(1, page),
+            page_size=25,
+            ip_filter=ip_filter,
+            sort_order=sort_order if sort_order in ("asc", "desc") else "desc",
+        )
+        set_cached_table(cache_key, result)
 
     # Normalize pagination key (DB returns total_attackers, template expects total)
     pagination = result["pagination"]
@@ -263,10 +281,16 @@ async def htmx_credentials(
     sort_by: str = Query("timestamp"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_credentials_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
-    )
+    cache_key = f"credentials:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = db.get_credentials_paginated(
+            page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        )
+        set_cached_table(cache_key, result)
 
     templates = get_templates()
     return templates.TemplateResponse(
@@ -293,14 +317,20 @@ async def htmx_attacks(
     sort_order: str = Query("desc"),
     ip_filter: str = Query(None),
 ):
-    db = get_db()
-    result = db.get_attack_types_paginated(
-        page=max(1, page),
-        page_size=5,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        ip_filter=ip_filter,
-    )
+    cache_key = f"attacks:{page}:{sort_by}:{sort_order}:{ip_filter or ''}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = db.get_attack_types_paginated(
+            page=max(1, page),
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            ip_filter=ip_filter,
+        )
+        set_cached_table(cache_key, result)
 
     # Transform attack data for template (join attack_types list, map id to log_id)
     items = []
@@ -339,12 +369,18 @@ async def htmx_patterns(
     request: Request,
     page: int = Query(1),
 ):
-    db = get_db()
     page = max(1, page)
     page_size = 10
 
-    # Get all attack type stats and paginate manually
-    result = db.get_attack_types_stats(limit=100)
+    cache_key = f"patterns:{page}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        # Get all attack type stats and paginate manually
+        result = db.get_attack_types_stats(limit=100)
+        set_cached_table(cache_key, result)
     all_patterns = [
         {"pattern": item["type"], "count": item["count"]}
         for item in result.get("attack_types", [])
