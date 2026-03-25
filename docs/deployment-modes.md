@@ -86,12 +86,24 @@ KRAWL_REDIS_PASSWORD=
 | Concern | Standalone | Scalable |
 |---------|-----------|----------|
 | Data storage | SQLite file on disk | MariaDB server |
-| Dashboard cache | Thread-locked Python dict | Redis with key prefix and 10-minute TTL |
-| Rate limiting / bans | SQLite queries | MariaDB with row-level locking |
+| Dashboard cache | Thread-locked Python dict | Redis with multi-tier TTL caching |
+| Rate limiting / bans | SQLite queries | MariaDB + Redis hot-path cache (30s TTL) |
 | Deployment strategy (K8s) | `Recreate` (SQLite file lock) | `RollingUpdate` (shared DB) |
 | SQLite PVC (K8s) | Required | Not used |
 | Multiple replicas | Not supported | Fully supported |
 | External dependencies | None | MariaDB + Redis |
+
+### Redis cache tiers (scalable mode)
+
+In scalable mode, Redis is used across three cache tiers to reduce database load:
+
+| Tier | TTL | What it caches |
+|------|-----|----------------|
+| **Hot-path** | 30s | Ban info and IP stats/categories. Checked on every incoming request via middleware, avoiding a MariaDB round-trip per request. |
+| **Table** | 2min | Paginated dashboard tables (attackers, credentials, honeypot triggers, attacks, patterns, access logs, attack stats). Shared across all replicas so multiple dashboard users don't duplicate queries. Automatically invalidated on write operations (ban overrides, IP tracking changes). |
+| **Warmup** | 10min | Pre-computed overview stats, top IPs/paths/user-agents, and map data. Refreshed by a background task every 5 minutes. |
+
+In standalone mode, only the warmup cache is used (in-memory dict). The hot-path and table caches are no-ops since there's only one process and the database is local.
 
 ---
 
