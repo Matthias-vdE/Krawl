@@ -305,6 +305,7 @@ location / {
 
 | Topic | Description |
 |-------|-------------|
+| [Deployment Modes](docs/deployment-modes.md) | Standalone (SQLite) vs Scalable (MariaDB + Redis) mode, configuration, and data migration |
 | [API](docs/api.md) | External APIs used by Krawl for IP data, reputation, and geolocation |
 | [Honeypot](docs/honeypot.md) | Full overview of honeypot pages: fake logins, directory listings, credential files, SQLi/XSS/XXE/command injection traps, and more |
 | [Reverse Proxy](docs/reverse-proxy.md) | How to deploy Krawl behind NGINX or use decoy subdomains |

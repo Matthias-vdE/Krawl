@@ -1,5 +1,23 @@
 # Krawl Honeypot Configuration
 
+# Deployment mode: "standalone" (SQLite + in-memory cache) or "scalable" (MariaDB + Redis)
+mode: standalone
+
+# MariaDB settings (only used in scalable mode)
+mariadb:
+  host: "localhost"
+  port: 3306
+  user: "krawl"
+  password: "krawl"
+  database: "krawl"
+
+# Redis settings (only used in scalable mode)
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+
 server:
   port: 5000
   delay: 100  # Response delay in milliseconds
@@ -23,7 +41,7 @@ dashboard:
   # if set to "null" this will Auto-generates random path if not set
   # can be set to "/dashboard" or similar <-- note this MUST include a forward slash
   # secret_path: super-secret-dashboard-path
-  secret_path: null
+  secret_path: test
 
   # Password for accessing protected dashboard panels.
   # If null, a random password will be generated and printed in the logs.

@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY src/ /app/src/
+COPY scripts/ /app/scripts/
 COPY wordlists.json /app/
 COPY entrypoint.sh /app/
 COPY config.yaml /app/
