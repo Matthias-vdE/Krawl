@@ -1,0 +1,80 @@
+---
+# Scalable mode: Krawl + MariaDB + Redis
+# Usage: docker compose -f docker-compose.scalable.yaml up
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: krawl-mariadb
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: krawl
+      MYSQL_USER: krawl
+      MYSQL_PASSWORD: krawl
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: krawl-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  krawl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: krawl-server
+    ports:
+      - "5000:5000"
+    environment:
+      - CONFIG_LOCATION=config.yaml
+      - KRAWL_MODE=scalable
+      - KRAWL_MARIADB_HOST=mariadb
+      - KRAWL_MARIADB_PORT=3306
+      - KRAWL_MARIADB_USER=krawl
+      - KRAWL_MARIADB_PASSWORD=krawl
+      - KRAWL_MARIADB_DATABASE=krawl
+      - KRAWL_REDIS_HOST=redis
+      - KRAWL_REDIS_PORT=6379
+      # Uncomment to set a custom dashboard password (auto-generated if not set)
+      # - KRAWL_DASHBOARD_PASSWORD=your-secret-password
+    volumes:
+      - ./wordlists.json:/app/wordlists.json:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./logs:/app/logs
+      - ./exports:/app/exports
+      - ./backups:/app/backups
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    develop:
+      watch:
+        - path: ./Dockerfile
+          action: rebuild
+        - path: ./src/
+          action: rebuild
+        - path: ./docker-compose.scalable.yaml
+          action: rebuild
+
+volumes:
+  mariadb_data:
+  redis_data:

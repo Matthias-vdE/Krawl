@@ -19,7 +19,13 @@ from pydantic import BaseModel
 from dependencies import get_db, get_client_ip
 from logger import get_app_logger
 from config import get_config
-from dashboard_cache import get_cached, is_warm
+from dashboard_cache import (
+    get_cached,
+    is_warm,
+    invalidate_table_cache,
+    get_cached_table,
+    set_cached_table,
+)
 
 # Server-side session token store (valid tokens for authenticated sessions)
 _auth_tokens: set = set()
@@ -169,6 +175,7 @@ async def ban_override(request: Request, body: BanOverrideRequest):
 
     if success:
         get_app_logger().info(f"Ban override: {body.action} on IP {body.ip}")
+        invalidate_table_cache()
         return JSONResponse(
             content={"success": True, "ip": body.ip, "action": body.action}
         )
@@ -201,6 +208,7 @@ async def track_ip(request: Request, body: TrackIpRequest):
 
     if success:
         get_app_logger().info(f"IP tracking: {body.action} on IP {body.ip}")
+        invalidate_table_cache()
         return JSONResponse(
             content={"success": True, "ip": body.ip, "action": body.action}
         )
@@ -209,11 +217,17 @@ async def track_ip(request: Request, body: TrackIpRequest):
 
 @router.get("/api/all-ip-stats")
 async def all_ip_stats(request: Request):
+    cached = get_cached_table("api:all_ip_stats")
+    if cached:
+        return JSONResponse(content=cached, headers=_no_cache_headers())
+
     db = get_db()
     try:
         ip_stats_list = db.get_ip_stats(limit=500)
+        result = {"ips": ip_stats_list}
+        set_cached_table("api:all_ip_stats", result)
         return JSONResponse(
-            content={"ips": ip_stats_list},
+            content=result,
             headers=_no_cache_headers(),
         )
     except Exception as e:
@@ -410,11 +424,17 @@ async def attack_types_stats(
     limit: int = Query(20),
     ip_filter: str = Query(None),
 ):
-    db = get_db()
     limit = min(max(1, limit), 100)
 
+    cache_key = f"api:attack_stats:{limit}:{ip_filter or ''}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        return JSONResponse(content=cached, headers=_no_cache_headers())
+
+    db = get_db()
     try:
         result = db.get_attack_types_stats(limit=limit, ip_filter=ip_filter)
+        set_cached_table(cache_key, result)
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
         get_app_logger().error(f"Error fetching attack types stats: {e}")

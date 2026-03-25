@@ -39,6 +39,7 @@
 - [Demo](#demo)
 - [What is Krawl?](#what-is-krawl)
 - [Krawl Dashboard](#krawl-dashboard)
+- [Deployment Modes](#deployment-modes)
 - [Quickstart](#quickstart)
   - [Docker Run](#docker-run)
   - [Docker Compose](#docker-compose)
@@ -110,15 +111,63 @@ Additionally, after authenticating with the dashboard password, two protected ta
 For more details, see the [Dashboard documentation](docs/dashboard.md).
 
 
+## Deployment Modes
+
+Krawl supports two deployment modes, controlled by the `mode` setting in `config.yaml` or the `KRAWL_MODE` environment variable.
+
+| | Standalone (default) | Scalable |
+|---|---|---|
+| **Database** | SQLite (WAL mode) | MariaDB |
+| **Cache** | In-memory Python dict | Redis (multi-tier TTL) |
+| **Replicas** | 1 (single instance) | 1+ (horizontal scaling) |
+| **External deps** | None | MariaDB + Redis |
+| **Best for** | Single-node, development, low-traffic | Production, HA, high-traffic |
+
+**Standalone** is the default and requires zero additional configuration. Just run Krawl and it works.
+
+**Scalable** mode requires a running MariaDB and Redis instance. Set it via:
+
+```yaml
+# config.yaml
+mode: scalable
+
+mariadb:
+  host: "mariadb"
+  port: 3306
+  user: "krawl"
+  password: "krawl"
+  database: "krawl"
+
+redis:
+  host: "redis"
+  port: 6379
+  db: 0
+  password: null
+```
+
+Or via environment variables:
+
+```bash
+KRAWL_MODE=scalable
+KRAWL_MARIADB_HOST=mariadb
+KRAWL_MARIADB_USER=krawl
+KRAWL_MARIADB_PASSWORD=krawl
+KRAWL_MARIADB_DATABASE=krawl
+KRAWL_REDIS_HOST=redis
+```
+
+For detailed instructions on running scalable mode with Docker Compose, Kubernetes/Helm, and migrating existing data from SQLite to MariaDB, see the [Deployment Modes documentation](docs/deployment-modes.md).
+
 ## Quickstart
 
 ### Docker Run
 
-Run Krawl with the latest image:
+Run Krawl in standalone mode with the latest image:
 
 ```bash
 docker run -d \
   -p 5000:5000 \
+  -e KRAWL_MODE=standalone \
   -e KRAWL_PORT=5000 \
   -e KRAWL_DELAY=100 \
   -e KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard" \
@@ -132,7 +181,7 @@ Access the server at `http://localhost:5000`
 
 ### Docker Compose
 
-Create a `docker-compose.yaml` file:
+Create a `docker-compose.yaml` file (standalone mode):
 
 ```yaml
 services:
@@ -143,6 +192,7 @@ services:
       - "5000:5000"
     environment:
       - CONFIG_LOCATION=config.yaml
+      - KRAWL_MODE=standalone
       - TZ=Europe/Rome
       # - KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
       # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
@@ -156,6 +206,8 @@ services:
 volumes:
   krawl-data:
 ```
+
+For scalable mode with MariaDB and Redis, use `docker-compose.scalable.yaml` instead. See [Deployment Modes](docs/deployment-modes.md) for details.
 
 Run with:
 
@@ -171,6 +223,8 @@ docker-compose down
 
 ### Kubernetes
 **Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the helm chart](helm/README.md).
+
+The Helm chart supports both deployment modes via the `mode` value (`standalone` or `scalable`). See [Deployment Modes](docs/deployment-modes.md) for Helm configuration examples.
 
 ### Uvicorn (Python)
 
@@ -222,6 +276,17 @@ You can use the [config.yaml](config.yaml) file for advanced configurations, suc
 | `KRAWL_INFINITE_PAGES_FOR_MALICIOUS` | Serve infinite pages to malicious IPs | `true` |
 | `KRAWL_MAX_PAGES_LIMIT` | Maximum page limit for crawlers | `250` |
 | `KRAWL_BAN_DURATION_SECONDS` | Ban duration in seconds for rate-limited IPs | `600` |
+| **Scalable mode** | | |
+| `KRAWL_MODE` | Deployment mode (`standalone` or `scalable`) | `standalone` |
+| `KRAWL_MARIADB_HOST` | MariaDB hostname | `localhost` |
+| `KRAWL_MARIADB_PORT` | MariaDB port | `3306` |
+| `KRAWL_MARIADB_USER` | MariaDB username | `krawl` |
+| `KRAWL_MARIADB_PASSWORD` | MariaDB password | `krawl` |
+| `KRAWL_MARIADB_DATABASE` | MariaDB database name | `krawl` |
+| `KRAWL_REDIS_HOST` | Redis hostname | `localhost` |
+| `KRAWL_REDIS_PORT` | Redis port | `6379` |
+| `KRAWL_REDIS_DB` | Redis database number | `0` |
+| `KRAWL_REDIS_PASSWORD` | Redis password | None |
 
 For example
 
@@ -242,11 +307,12 @@ export KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
 export KRAWL_DASHBOARD_PASSWORD="my-secret-password"
 ```
 
-Example of a Docker run with env variables:
+Example of a Docker run with env variables (standalone mode):
 
 ```bash
 docker run -d \
   -p 5000:5000 \
+  -e KRAWL_MODE=standalone \
   -e KRAWL_PORT=5000 \
   -e KRAWL_DELAY=100 \
   -e KRAWL_DASHBOARD_PASSWORD="my-secret-password" \
@@ -305,6 +371,7 @@ location / {
 
 | Topic | Description |
 |-------|-------------|
+| [Deployment Modes](docs/deployment-modes.md) | Standalone (SQLite) vs Scalable (MariaDB + Redis) mode, configuration, and data migration |
 | [API](docs/api.md) | External APIs used by Krawl for IP data, reputation, and geolocation |
 | [Honeypot](docs/honeypot.md) | Full overview of honeypot pages: fake logins, directory listings, credential files, SQLi/XSS/XXE/command injection traps, and more |
 | [Reverse Proxy](docs/reverse-proxy.md) | How to deploy Krawl behind NGINX or use decoy subdomains |

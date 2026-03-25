@@ -1,5 +1,23 @@
 # Krawl Honeypot Configuration
 
+# Deployment mode: "standalone" (SQLite + in-memory cache) or "scalable" (MariaDB + Redis)
+mode: standalone
+
+# MariaDB settings (only used in scalable mode)
+mariadb:
+  host: "localhost"
+  port: 3306
+  user: "krawl"
+  password: "krawl"
+  database: "krawl"
+
+# Redis settings (only used in scalable mode)
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+
 server:
   port: 5000
   delay: 100  # Response delay in milliseconds

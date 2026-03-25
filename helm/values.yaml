@@ -1,3 +1,6 @@
+# Deployment mode: "standalone" (SQLite + in-memory cache) or "scalable" (MariaDB + Redis)
+mode: standalone
+
 replicaCount: 1
 
 image:
@@ -108,7 +111,81 @@ config:
     max_pages_limit: 250
     ban_duration_seconds: 600
 
-# Database persistence configuration
+# MariaDB settings (only used when mode=scalable)
+mariadb:
+  # Deploy MariaDB as part of this chart (set to false if using an external instance)
+  enabled: false
+  host: "mariadb"
+  port: 3306
+  user: "krawl"
+  password: "krawl"
+  database: "krawl"
+  rootPassword: "rootpass"
+  # Use an existing secret for the MariaDB password instead of plaintext
+  # existingSecret: ""
+  # existingSecretKey: "mariadb-password"
+  image:
+    repository: mariadb
+    tag: "11"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    size: 5Gi
+    accessMode: ReadWriteOnce
+    # storageClassName: ""
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Redis settings (only used when mode=scalable)
+redis:
+  # Deploy Redis as part of this chart (set to false if using an external instance)
+  enabled: false
+  host: "redis"
+  port: 6379
+  db: 0
+  password: ""
+  # Use an existing secret for the Redis password instead of plaintext
+  # existingSecret: ""
+  # existingSecretKey: "redis-password"
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessMode: ReadWriteOnce
+    # storageClassName: ""
+  resources:
+    limits:
+      cpu: 250m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# SQLite -> MariaDB migration job settings
+migration:
+  enabled: false
+  # SQLite filename inside the PVC (default: krawl.db)
+  sqliteFilename: "krawl.db"
+  # Rows per batch insert
+  batchSize: 1000
+  # Drop existing MariaDB tables before migrating
+  dropExisting: false
+  # Use a specific existing PVC (defaults to <release>-krawl-db)
+  # existingClaim: ""
+  # Job retry limit
+  backoffLimit: 3
+  # Auto-cleanup job after completion (seconds)
+  ttlSecondsAfterFinished: 3600
+
+# Database persistence configuration (only used when mode=standalone)
 database:
   # Persistence configuration
   persistence:
