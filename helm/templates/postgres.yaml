@@ -75,6 +75,8 @@ spec:
             secretKeyRef:
               name: {{ include "krawl.fullname" . }}-postgres
               key: postgres-password
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
         {{- if .Values.postgres.persistence.enabled }}
         volumeMounts:
         - name: data
