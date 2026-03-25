@@ -7,7 +7,11 @@ metadata:
 spec:
   replicas: {{ .Values.replicaCount }}
   strategy:
+    {{- if eq .Values.mode "scalable" }}
+    type: RollingUpdate
+    {{- else }}
     type: Recreate
+    {{- end }}
   selector:
     matchLabels:
       {{- include "krawl.selectorLabels" . | nindent 6 }}
@@ -54,6 +58,36 @@ spec:
               name: {{ include "krawl.fullname" . }}-dashboard
               key: dashboard-password
         {{- end }}
+        {{- if eq .Values.mode "scalable" }}
+        - name: KRAWL_MODE
+          value: "scalable"
+        - name: KRAWL_MARIADB_HOST
+          value: {{ .Values.mariadb.host | quote }}
+        - name: KRAWL_MARIADB_PORT
+          value: {{ .Values.mariadb.port | quote }}
+        - name: KRAWL_MARIADB_USER
+          value: {{ .Values.mariadb.user | quote }}
+        - name: KRAWL_MARIADB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "krawl.fullname" . }}-mariadb
+              key: mariadb-password
+        - name: KRAWL_MARIADB_DATABASE
+          value: {{ .Values.mariadb.database | quote }}
+        - name: KRAWL_REDIS_HOST
+          value: {{ .Values.redis.host | quote }}
+        - name: KRAWL_REDIS_PORT
+          value: {{ .Values.redis.port | quote }}
+        - name: KRAWL_REDIS_DB
+          value: {{ .Values.redis.db | quote }}
+        {{- if .Values.redis.password }}
+        - name: KRAWL_REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "krawl.fullname" . }}-redis
+              key: redis-password
+        {{- end }}
+        {{- end }}
         volumeMounts:
         - name: config
           mountPath: /app/config.yaml
@@ -63,7 +97,7 @@ spec:
           mountPath: /app/wordlists.json
           subPath: wordlists.json
           readOnly: true
-        {{- if .Values.database.persistence.enabled }}
+        {{- if and .Values.database.persistence.enabled (ne .Values.mode "scalable") }}
         - name: database
           mountPath: /app/data
         {{- end }}
@@ -78,7 +112,7 @@ spec:
       - name: wordlists
         configMap:
           name: {{ include "krawl.fullname" . }}-wordlists
-      {{- if .Values.database.persistence.enabled }}
+      {{- if and .Values.database.persistence.enabled (ne .Values.mode "scalable") }}
       - name: database
         {{- if .Values.database.persistence.existingClaim }}
         persistentVolumeClaim:
