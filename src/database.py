@@ -73,6 +73,7 @@ class DatabaseManager:
             return
 
         from config import get_config
+
         sql_echo = get_config().log_level == "DEBUG"
 
         self._mode = mode

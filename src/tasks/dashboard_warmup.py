@@ -56,20 +56,37 @@ def main():
         # --- Server-rendered data (stats cards + suspicious table) ---
         stats = _timed("get_dashboard_counts", db.get_dashboard_counts)
 
-        cred_result = _timed("get_credentials_paginated", lambda: db.get_credentials_paginated(page=1, page_size=1))
+        cred_result = _timed(
+            "get_credentials_paginated",
+            lambda: db.get_credentials_paginated(page=1, page_size=1),
+        )
         stats["credential_count"] = cred_result["pagination"]["total"]
 
-        suspicious = _timed("get_recent_suspicious", lambda: db.get_recent_suspicious(limit=10))
+        suspicious = _timed(
+            "get_recent_suspicious", lambda: db.get_recent_suspicious(limit=10)
+        )
 
         # --- HTMX Overview tables (first page, default sort) ---
-        top_ips = _timed("get_top_ips_paginated", lambda: db.get_top_ips_paginated(page=1, page_size=8))
-        top_ua = _timed("get_top_user_agents_paginated", lambda: db.get_top_user_agents_paginated(page=1, page_size=5))
-        top_paths = _timed("get_top_paths_paginated", lambda: db.get_top_paths_paginated(page=1, page_size=5))
+        top_ips = _timed(
+            "get_top_ips_paginated",
+            lambda: db.get_top_ips_paginated(page=1, page_size=8),
+        )
+        top_ua = _timed(
+            "get_top_user_agents_paginated",
+            lambda: db.get_top_user_agents_paginated(page=1, page_size=5),
+        )
+        top_paths = _timed(
+            "get_top_paths_paginated",
+            lambda: db.get_top_paths_paginated(page=1, page_size=5),
+        )
 
         # --- Map data (default: top 100 IPs by total_requests) ---
-        map_ips = _timed("get_all_ips_paginated", lambda: db.get_all_ips_paginated(
-            page=1, page_size=100, sort_by="total_requests", sort_order="desc"
-        ))
+        map_ips = _timed(
+            "get_all_ips_paginated",
+            lambda: db.get_all_ips_paginated(
+                page=1, page_size=100, sort_by="total_requests", sort_order="desc"
+            ),
+        )
 
         # Store everything in the cache (overwrites previous values)
         set_cached("stats", stats)

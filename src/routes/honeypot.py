@@ -61,6 +61,7 @@ async def _track_honeypot_request(request: Request):
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "")
     path = request.url.path
+    get_app_logger().debug(f"[HoneypotDep] {request.method} {path} from {client_ip}")
 
     body = ""
     if request.method in ("POST", "PUT"):
@@ -77,7 +78,10 @@ async def _track_honeypot_request(request: Request):
 
     # Record if attack pattern detected OR path is a honeypot trap
     if attack_findings or tracker.is_honeypot_path(path):
-        tracker.record_access(
+        import asyncio
+
+        await asyncio.to_thread(
+            tracker.record_access,
             ip=client_ip,
             path=path,
             user_agent=user_agent,
@@ -202,8 +206,12 @@ async def credential_capture_post(request: Request, path: str):
             credential_line = f"{timestamp}|{client_ip}|{username or 'N/A'}|{password or 'N/A'}|{full_path}"
             credential_logger.info(credential_line)
 
-            tracker.record_credential_attempt(
-                client_ip, full_path, username or "N/A", password or "N/A"
+            await asyncio.to_thread(
+                tracker.record_credential_attempt,
+                client_ip,
+                full_path,
+                username or "N/A",
+                password or "N/A",
             )
 
             access_logger.warning(
@@ -394,6 +402,8 @@ async def trap_page(request: Request, path: str):
     user_agent = request.headers.get("User-Agent", "")
     full_path = f"/{path}" if path else "/"
 
+    app_logger.debug(f"[TrapPage] {client_ip} - {full_path}")
+
     # Check wordpress-like paths
     if "wordpress" in full_path.lower():
         return HTMLResponse(html_templates.wordpress())
@@ -405,7 +415,8 @@ async def trap_page(request: Request, path: str):
     if not tracker.detect_attack_type(full_path) and not tracker.is_honeypot_path(
         full_path
     ):
-        tracker.record_access(
+        await asyncio.to_thread(
+            tracker.record_access,
             ip=client_ip,
             path=full_path,
             user_agent=user_agent,
@@ -423,11 +434,19 @@ async def trap_page(request: Request, path: str):
     await asyncio.sleep(config.delay / 1000.0)
 
     # Increment page visit counter
-    current_visit_count = tracker.increment_page_visit(client_ip)
+    current_visit_count = await asyncio.to_thread(
+        tracker.increment_page_visit, client_ip
+    )
 
-    # Generate page
-    page_html = _generate_page(
-        config, tracker, client_ip, full_path, current_visit_count, request.app
+    # Generate page (sync function with DB calls, run in thread)
+    page_html = await asyncio.to_thread(
+        _generate_page,
+        config,
+        tracker,
+        client_ip,
+        full_path,
+        current_visit_count,
+        request.app,
     )
 
     # Decrement canary counter
