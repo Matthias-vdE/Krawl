@@ -102,6 +102,26 @@ def _migrate_performance_indexes(engine: Engine) -> List[str]:
     return added
 
 
+def _migrate_scalable_indexes(engine: Engine) -> List[str]:
+    """Add indexes for MariaDB query performance (also benefits SQLite)."""
+    added = []
+    indexes = {
+        "ix_access_logs_path": ("access_logs", "path"),
+        "ix_access_logs_user_agent": ("access_logs", "user_agent"),
+        "ix_ip_stats_category": ("ip_stats", "category"),
+        "ix_ip_stats_need_reevaluation": ("ip_stats", "need_reevaluation"),
+        "ix_ip_stats_total_requests": ("ip_stats", "total_requests"),
+    }
+    for idx_name, (table, column) in indexes.items():
+        if not _index_exists(engine, table, idx_name):
+            with engine.begin() as conn:
+                conn.execute(
+                    text(f"CREATE INDEX {idx_name} ON {table}({column})")
+                )
+            added.append(idx_name)
+    return added
+
+
 def _migrate_ban_override_column(engine: Engine) -> bool:
     """Add ban_override column to ip_stats if missing."""
     if _column_exists(engine, "ip_stats", "ban_override"):
@@ -141,6 +161,10 @@ def run_migrations(engine: Engine) -> None:
 
         idx_added = _migrate_performance_indexes(engine)
         for idx in idx_added:
+            applied.append(f"add index {idx}")
+
+        scalable_idx = _migrate_scalable_indexes(engine)
+        for idx in scalable_idx:
             applied.append(f"add index {idx}")
 
     except Exception as e:
