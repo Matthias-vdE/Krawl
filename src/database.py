@@ -956,7 +956,11 @@ class DatabaseManager:
                 if sort_order == "asc"
                 else AccessLog.timestamp.desc()
             )
-            query = session.query(AccessLog).options(joinedload(AccessLog.attack_detections)).order_by(order)
+            query = (
+                session.query(AccessLog)
+                .options(joinedload(AccessLog.attack_detections))
+                .order_by(order)
+            )
 
             if ip_filter:
                 query = query.filter(AccessLog.ip == sanitize_ip(ip_filter))
@@ -1027,7 +1031,11 @@ class DatabaseManager:
         """
         session = self.session
         try:
-            query = session.query(AccessLog).options(joinedload(AccessLog.attack_detections)).order_by(AccessLog.timestamp.desc())
+            query = (
+                session.query(AccessLog)
+                .options(joinedload(AccessLog.attack_detections))
+                .order_by(AccessLog.timestamp.desc())
+            )
 
             if ip_filter:
                 query = query.filter(AccessLog.ip == sanitize_ip(ip_filter))
@@ -2047,7 +2055,11 @@ class DatabaseManager:
             total_attacks = count_subq.distinct().count()
 
             # Get paginated access logs with attack detections
-            query = session.query(AccessLog).options(joinedload(AccessLog.attack_detections)).join(AttackDetection)
+            query = (
+                session.query(AccessLog)
+                .options(joinedload(AccessLog.attack_detections))
+                .join(AttackDetection)
+            )
             if base_filters:
                 query = query.filter(*base_filters)
             query = query.distinct(AccessLog.id)

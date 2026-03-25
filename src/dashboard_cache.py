@@ -38,7 +38,9 @@ def _json_serializer(obj):
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
-def initialize_cache(mode: str = "standalone", redis_config: dict = None, ttl_config: dict = None) -> None:
+def initialize_cache(
+    mode: str = "standalone", redis_config: dict = None, ttl_config: dict = None
+) -> None:
     """
     Initialize the cache backend.
 

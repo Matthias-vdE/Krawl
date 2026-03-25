@@ -115,9 +115,7 @@ def _migrate_scalable_indexes(engine: Engine) -> List[str]:
     for idx_name, (table, column) in indexes.items():
         if not _index_exists(engine, table, idx_name):
             with engine.begin() as conn:
-                conn.execute(
-                    text(f"CREATE INDEX {idx_name} ON {table}({column})")
-                )
+                conn.execute(text(f"CREATE INDEX {idx_name} ON {table}({column})"))
             added.append(idx_name)
     return added
 
