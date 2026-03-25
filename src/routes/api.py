@@ -19,7 +19,13 @@ from pydantic import BaseModel
 from dependencies import get_db, get_client_ip
 from logger import get_app_logger
 from config import get_config
-from dashboard_cache import get_cached, is_warm, invalidate_table_cache, get_cached_table, set_cached_table
+from dashboard_cache import (
+    get_cached,
+    is_warm,
+    invalidate_table_cache,
+    get_cached_table,
+    set_cached_table,
+)
 
 # Server-side session token store (valid tokens for authenticated sessions)
 _auth_tokens: set = set()

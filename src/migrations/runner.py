@@ -77,7 +77,9 @@ def _migrate_ban_state_columns(engine: Engine) -> List[str]:
 def _migrate_performance_indexes(engine: Engine) -> List[str]:
     """Add performance indexes to attack_detections if missing."""
     added = []
-    if not _index_exists(engine, "attack_detections", "ix_attack_detections_attack_type"):
+    if not _index_exists(
+        engine, "attack_detections", "ix_attack_detections_attack_type"
+    ):
         with engine.begin() as conn:
             conn.execute(
                 text(

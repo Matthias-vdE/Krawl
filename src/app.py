@@ -69,12 +69,16 @@ async def lifespan(app: FastAPI):
                     "password": config.redis_password,
                 },
             )
-            app_logger.info(f"Cache initialized with Redis at {config.redis_host}:{config.redis_port}")
+            app_logger.info(
+                f"Cache initialized with Redis at {config.redis_host}:{config.redis_port}"
+            )
         else:
             initialize_cache(mode="standalone")
             app_logger.info("Cache initialized with in-memory backend")
     except Exception as e:
-        app_logger.warning(f"Redis cache initialization failed: {e}. Falling back to in-memory cache.")
+        app_logger.warning(
+            f"Redis cache initialization failed: {e}. Falling back to in-memory cache."
+        )
         initialize_cache(mode="standalone")
 
     # Initialize tracker
