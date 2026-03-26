@@ -2,6 +2,25 @@
 
 Krawl supports two deployment modes: **standalone** and **scalable**. The mode is controlled by the `mode` setting in `config.yaml` or the `KRAWL_MODE` environment variable.
 
+## Table of Contents
+- [At a Glance](#at-a-glance)
+- [Standalone Mode](#standalone-mode)
+- [Scalable Mode](#scalable-mode)
+  - [Redis Cache Tiers](#redis-cache-tiers)
+- [Running with Docker Compose](#running-with-docker-compose)
+  - [Standalone](#standalone)
+  - [Scalable](#scalable)
+  - [Docker Run](#docker-run)
+  - [Uvicorn (Python)](#uvicorn-python)
+- [Running with Kubernetes (Helm)](#running-with-kubernetes-helm)
+- [Migrating Data from Standalone to Scalable](#migrating-data-from-standalone-to-scalable)
+  - [Pre-migration Checklist](#pre-migration-checklist)
+  - [Migration Script](#migration-script)
+  - [Step-by-step: Local / Docker Host](#step-by-step-local--docker-host)
+  - [Step-by-step: Docker Compose](#step-by-step-docker-compose)
+  - [Step-by-step: Kubernetes (Helm)](#step-by-step-kubernetes-helm)
+  - [Post-migration](#post-migration)
+
 ---
 
 ## At a Glance
