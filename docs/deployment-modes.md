@@ -169,6 +169,9 @@ docker compose -f docker/docker-compose.standalone.yaml up -d
 
 ### Scalable
 
+> [!CAUTION]
+> The compose file below uses **default passwords** (`krawl`/`krawl`) for PostgreSQL and Redis. **Change them before deploying to production.** Update `POSTGRES_PASSWORD`, `KRAWL_POSTGRES_PASSWORD`, and optionally add a Redis password.
+
 `docker/docker-compose.scalable.yaml`:
 
 ```yaml

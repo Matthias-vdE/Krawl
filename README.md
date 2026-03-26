@@ -180,6 +180,9 @@ volumes:
 
 **Scalable** — with PostgreSQL and Redis:
 
+> [!CAUTION]
+> The example below uses **default passwords** (`krawl`/`krawl`). **Change them before deploying to production.**
+
 ```yaml
 services:
   postgres:

@@ -57,6 +57,9 @@ helm install krawl ./helm -n krawl-system --create-namespace \
 
 This deploys PostgreSQL and Redis StatefulSets with Services in the same namespace. Persistence is enabled by default.
 
+> [!CAUTION]
+> The minimal values below use placeholder passwords. **Change `postgres.password` and `redis.password` before deploying to production.**
+
 Minimal `values-minimal.yaml` for scalable mode:
 
 ```yaml

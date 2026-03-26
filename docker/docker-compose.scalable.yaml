@@ -1,6 +1,8 @@
 ---
 # Scalable mode: Krawl + PostgreSQL + Redis
 # Usage: docker compose -f docker/docker-compose.scalable.yaml up -d
+#
+# !! IMPORTANT: Change the default PostgreSQL and Redis passwords before deploying to production !!
 services:
   postgres:
     image: postgres:16-alpine
