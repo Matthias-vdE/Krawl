@@ -1,3 +1,6 @@
+# Deployment mode: "standalone" (SQLite + in-memory cache) or "scalable" (PostgreSQL + Redis)
+mode: scalable
+
 replicaCount: 1
 
 image:
@@ -81,6 +84,7 @@ config:
     token_tries: 10
   dashboard:
     secret_path: null  # Auto-generated if not set, or set to "/my-secret-dashboard"
+    cache_warmup: true  # Pre-compute dashboard data every 5 minutes. In scalable mode with Redis, consider setting to false — table caching handles it.
   backups:
     path: "backups"
     enabled: false
@@ -92,6 +96,7 @@ config:
   database:
     path: "data/krawl.db"
     retention_days: 30
+    persist_suspicious_only: false  # Only persist suspicious requests to access log
   behavior:
     probability_error_codes: 0
   analyzer:
@@ -126,7 +131,84 @@ config:
       8. If the request has a file extension, generate a RAW content relevant to that type (e.g. a fake json for .json requests)
       Generate the complete HTML page:
 
-# Database persistence configuration
+# PostgreSQL settings (only used when mode=scalable)
+postgres:
+  # Deploy PostgreSQL as part of this chart (set to false if using an external instance)
+  enabled: true
+  host: "postgres"
+  port: 5432
+  user: "krawl"
+  password: "krawl"
+  database: "krawl"
+  # Use an existing secret for the PostgreSQL password instead of plaintext
+  # existingSecret: ""
+  # existingSecretKey: "postgres-password"
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    size: 5Gi
+    accessMode: ReadWriteOnce
+    # storageClassName: ""
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Redis settings (only used when mode=scalable)
+redis:
+  # Deploy Redis as part of this chart (set to false if using an external instance)
+  enabled: true
+  host: "redis"
+  port: 6379
+  db: 0
+  password: ""
+  # Cache TTL settings (seconds)
+  cache_ttl: 600    # Dashboard warmup data (default: 10 minutes)
+  hot_ttl: 30       # Hot-path data like ban info (default: 30 seconds)
+  table_ttl: 120    # Paginated dashboard tables (default: 2 minutes)
+  # Use an existing secret for the Redis password instead of plaintext
+  # existingSecret: ""
+  # existingSecretKey: "redis-password"
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+  persistence:
+    enabled: true
+    size: 1Gi
+    accessMode: ReadWriteOnce
+    # storageClassName: ""
+  resources:
+    limits:
+      cpu: 250m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# SQLite -> PostgreSQL migration job settings
+migration:
+  enabled: false
+  # SQLite filename inside the PVC (default: krawl.db)
+  sqliteFilename: "krawl.db"
+  # Rows per batch insert
+  batchSize: 1000
+  # Drop existing PostgreSQL tables before migrating
+  dropExisting: false
+  # Use a specific existing PVC (defaults to <release>-krawl-db)
+  # existingClaim: ""
+  # Job retry limit
+  backoffLimit: 3
+  # Auto-cleanup job after completion (seconds)
+  ttlSecondsAfterFinished: 3600
+
+# Database persistence configuration (only used when mode=standalone)
 database:
   # Persistence configuration
   persistence:
@@ -165,6 +247,11 @@ networkPolicy:
 
 # Wordlists configuration
 wordlists:
+  # Proxy headers to check for real client IP (checked in order, first match wins)
+  proxy_headers:
+    - CF-Connecting-IP
+    - X-Forwarded-For
+    - X-Real-IP
   usernames:
     prefixes:
       - admin

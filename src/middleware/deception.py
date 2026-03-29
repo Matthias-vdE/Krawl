@@ -5,7 +5,6 @@ Middleware for deception response detection (path traversal, XXE, command inject
 Short-circuits the request if a deception response is triggered.
 """
 
-import asyncio
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -25,14 +24,19 @@ class DeceptionMiddleware(BaseHTTPMiddleware):
         if path.startswith(dashboard_prefix):
             return await call_next(request)
 
+        get_app_logger().debug(f"[Deception] Processing {request.method} {path}")
         query = request.url.query or ""
         method = request.method
 
         # Read body for POST requests
         body = ""
         if method == "POST":
-            body_bytes = await request.body()
-            body = body_bytes.decode("utf-8", errors="replace")
+            try:
+                body_bytes = await request.body()
+                body = body_bytes.decode("utf-8", errors="replace")
+            except Exception:
+                # Client disconnected before body was fully sent
+                body = ""
 
         result = detect_and_respond_deception(path, query, body, method)
 
@@ -40,7 +44,6 @@ class DeceptionMiddleware(BaseHTTPMiddleware):
             response_body, content_type, status_code = result
             client_ip = get_client_ip(request)
             user_agent = request.headers.get("User-Agent", "")
-            app_logger = get_app_logger()
             access_logger = get_access_logger()
 
             # Determine attack type for logging
@@ -81,9 +84,12 @@ class DeceptionMiddleware(BaseHTTPMiddleware):
                 f"[{attack_type_log} DETECTED] {client_ip} - {path[:100]} - Method: {method}"
             )
 
-            # Record access
+            # Record access (run in thread to avoid blocking event loop)
+            import asyncio
+
             tracker = request.app.state.tracker
-            tracker.record_access(
+            await asyncio.to_thread(
+                tracker.record_access,
                 ip=client_ip,
                 path=path,
                 user_agent=user_agent,

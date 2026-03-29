@@ -1,5 +1,27 @@
 # Krawl Honeypot Configuration
 
+# Deployment mode: "standalone" (SQLite + in-memory cache) or "scalable" (PostgreSQL + Redis)
+mode: standalone
+
+# PostgreSQL settings (only used in scalable mode)
+postgres:
+  host: "localhost"
+  port: 5432
+  user: "krawl"
+  password: "krawl"
+  database: "krawl"
+
+# Redis settings (only used in scalable mode)
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+  # Cache TTL settings (seconds) — tune for your traffic volume
+  cache_ttl: 600    # Dashboard warmup data (default: 10 minutes)
+  hot_ttl: 30       # Hot-path data like ban info, IP categories (default: 30 seconds)
+  table_ttl: 120    # Paginated dashboard tables (default: 2 minutes)
+
 server:
   port: 5000
   delay: 100  # Response delay in milliseconds
@@ -30,6 +52,13 @@ dashboard:
   # Can also be set via KRAWL_DASHBOARD_PASSWORD env var.
   password: null
 
+  # Enable background cache warmup task for the dashboard.
+  # When enabled, dashboard data is pre-computed every 5 minutes for instant page loads.
+  # When disabled, all dashboard queries hit the database directly on each request.
+  # In scalable mode with Redis, consider disabling this — paginated table caching
+  # already reduces DB load without needing a background warmup task.
+  cache_warmup: true
+
 backups:
   path: "backups"
   cron: "*/30 * * * *"
@@ -44,6 +73,10 @@ logging:
 database:
   path: "data/krawl.db"
   retention_days: 30
+  # Only persist suspicious requests to the access log.
+  # When enabled, non-suspicious requests still increment IP stats counters
+  # but won't be stored as individual access log entries, saving disk I/O.
+  persist_suspicious_only: false
 
 behavior:
   probability_error_codes: 0  # 0-100 percentage

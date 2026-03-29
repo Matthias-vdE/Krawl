@@ -18,6 +18,25 @@ import yaml
 class Config:
     """Configuration class for the deception server"""
 
+    # Deployment mode: "standalone" (SQLite + in-memory) or "scalable" (PostgreSQL + Redis)
+    mode: str = "standalone"
+
+    # PostgreSQL settings (scalable mode)
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_user: str = "krawl"
+    postgres_password: str = "krawl"
+    postgres_database: str = "krawl"
+
+    # Redis settings (scalable mode)
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: Optional[str] = None
+    redis_cache_ttl: int = 600
+    redis_hot_ttl: int = 30
+    redis_table_ttl: int = 120
+
     port: int = 5000
     delay: int = 100  # milliseconds
     server_header: str = ""
@@ -30,6 +49,7 @@ class Config:
     dashboard_secret_path: str = None
     dashboard_password: Optional[str] = None
     dashboard_password_generated: bool = False
+    dashboard_cache_warmup: bool = True
     probability_error_codes: int = 0  # Percentage (0-100)
 
     # Crawl limiting settings - for legitimate vs malicious crawlers
@@ -47,6 +67,7 @@ class Config:
     # Database settings
     database_path: str = "data/krawl.db"
     database_retention_days: int = 30
+    database_persist_suspicious_only: bool = False
 
     # Analyzer settings
     http_risky_methods_threshold: float = None
@@ -68,71 +89,50 @@ class Config:
     ai_max_daily_requests: int = 0
 
     _server_ip: Optional[str] = None
-    _server_ip_cache_time: float = 0
-    _ip_cache_ttl: int = 300
+    _server_ip_resolved: bool = False
 
-    def get_server_ip(self, refresh: bool = False) -> Optional[str]:
+    def resolve_server_ip(self) -> None:
         """
-        Get the server's own public IP address.
-        Excludes requests from the server itself from being tracked.
+        Resolve the server's public IP once at startup.
+        Stores the result (or None) permanently — no repeated lookups.
         """
-
-        current_time = time.time()
-
-        # Check if cache is valid and not forced refresh
-        if (
-            self._server_ip is not None
-            and not refresh
-            and (current_time - self._server_ip_cache_time) < self._ip_cache_ttl
-        ):
-            return self._server_ip
+        if self._server_ip_resolved:
+            return
 
         try:
-            # Try multiple external IP detection services (fallback chain)
             ip_detection_services = [
-                "https://api.ipify.org",  # Plain text response
-                "http://ident.me",  # Plain text response
-                "https://ifconfig.me",  # Plain text response
+                "https://api.ipify.org",
+                "http://ident.me",
+                "https://ifconfig.me",
             ]
 
-            ip = None
             for service_url in ip_detection_services:
                 try:
                     response = requests.get(service_url, timeout=5)
                     if response.status_code == 200:
                         ip = response.text.strip()
                         if ip:
-                            break
+                            self._server_ip = ip
+                            self._server_ip_resolved = True
+                            return
                 except requests.RequestException:
                     continue
 
-            if not ip:
-                get_app_logger().warning(
-                    "Could not determine server IP from external services. "
-                    "All IPs will be tracked (including potential server IP)."
-                )
-                return None
-
-            self._server_ip = ip
-            self._server_ip_cache_time = current_time
-            return ip
-
+            get_app_logger().warning(
+                "Could not determine server IP from external services. "
+                "All IPs will be tracked (including potential server IP)."
+            )
         except Exception as e:
             get_app_logger().warning(
                 f"Could not determine server IP address: {e}. "
                 "All IPs will be tracked (including potential server IP)."
             )
-            return None
 
-    def refresh_server_ip(self) -> Optional[str]:
-        """
-        Force refresh the cached server IP.
-        Use this if you suspect the IP has changed.
+        self._server_ip_resolved = True
 
-        Returns:
-            New server IP address or None if unable to determine
-        """
-        return self.get_server_ip(refresh=True)
+    def get_server_ip(self) -> Optional[str]:
+        """Get the server's public IP (resolved once at startup)."""
+        return self._server_ip
 
     @classmethod
     def from_yaml(cls) -> "Config":
@@ -163,6 +163,9 @@ class Config:
             data = {}
 
         # Extract nested values with defaults
+        mode = data.get("mode", "standalone")
+        postgres_cfg = data.get("postgres", {})
+        redis_cfg = data.get("redis", {})
         server = data.get("server", {})
         links = data.get("links", {})
         canary = data.get("canary", {})
@@ -193,7 +196,28 @@ class Config:
             dashboard_password = os.urandom(25).hex()
             dashboard_password_generated = True
 
+        # Validate mode
+        if mode not in ("standalone", "scalable"):
+            print(
+                f"Error: Invalid mode '{mode}'. Must be 'standalone' or 'scalable'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         return cls(
+            mode=mode,
+            postgres_host=postgres_cfg.get("host", "localhost"),
+            postgres_port=postgres_cfg.get("port", 5432),
+            postgres_user=postgres_cfg.get("user", "krawl"),
+            postgres_password=postgres_cfg.get("password", "krawl"),
+            postgres_database=postgres_cfg.get("database", "krawl"),
+            redis_host=redis_cfg.get("host", "localhost"),
+            redis_port=redis_cfg.get("port", 6379),
+            redis_db=redis_cfg.get("db", 0),
+            redis_password=redis_cfg.get("password") or None,
+            redis_cache_ttl=redis_cfg.get("cache_ttl", 600),
+            redis_hot_ttl=redis_cfg.get("hot_ttl", 30),
+            redis_table_ttl=redis_cfg.get("table_ttl", 120),
             port=server.get("port", 5000),
             delay=server.get("delay", 100),
             server_header=server.get("server_header", ""),
@@ -215,6 +239,7 @@ class Config:
             dashboard_secret_path=dashboard_path,
             dashboard_password=dashboard_password,
             dashboard_password_generated=dashboard_password_generated,
+            dashboard_cache_warmup=dashboard.get("cache_warmup", True),
             probability_error_codes=behavior.get("probability_error_codes", 0),
             exports_path=exports.get("path", "exports"),
             backups_path=backups.get("path", "backups"),
@@ -222,6 +247,9 @@ class Config:
             backups_cron=backups.get("cron"),
             database_path=database.get("path", "data/krawl.db"),
             database_retention_days=database.get("retention_days", 30),
+            database_persist_suspicious_only=database.get(
+                "persist_suspicious_only", False
+            ),
             http_risky_methods_threshold=analyzer.get(
                 "http_risky_methods_threshold", 0.1
             ),
@@ -302,7 +330,8 @@ def override_config_from_env(config: Config = None):
                     if len(parts) == 2:
                         setattr(config, field, (int(parts[0]), int(parts[1])))
                 else:
-                    setattr(config, field, env_value)
+                    # Treat empty strings as None for Optional fields (e.g. passwords)
+                    setattr(config, field, env_value if env_value else None)
             except Exception as e:
                 get_app_logger().error(
                     f"Error overriding config '{field}' from environment variable '{env_var}': {e}"

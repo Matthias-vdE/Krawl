@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from logger import get_app_logger
 
 from dependencies import get_db, get_templates
+from config import get_config
 from dashboard_cache import get_cached, is_warm
 
 router = APIRouter()
@@ -22,14 +23,18 @@ async def dashboard_page(request: Request):
     dashboard_path = "/" + config.dashboard_secret_path.lstrip("/")
 
     # Serve from pre-computed cache when available, fall back to live queries
-    if is_warm():
+    if get_config().dashboard_cache_warmup and is_warm():
         stats = get_cached("stats")
         suspicious = get_cached("suspicious")
     else:
+        import asyncio
+
         db = get_db()
-        stats = db.get_dashboard_counts()
-        suspicious = db.get_recent_suspicious(limit=10)
-        cred_result = db.get_credentials_paginated(page=1, page_size=1)
+        stats = await asyncio.to_thread(db.get_dashboard_counts)
+        suspicious = await asyncio.to_thread(db.get_recent_suspicious, 10)
+        cred_result = await asyncio.to_thread(
+            db.get_credentials_paginated, page=1, page_size=1
+        )
         stats["credential_count"] = cred_result["pagination"]["total"]
 
     templates = get_templates()
@@ -54,9 +59,11 @@ async def dashboard_page(request: Request):
 
 @router.get("/ip/{ip_address:path}")
 async def ip_page(ip_address: str, request: Request):
+    import asyncio
+
     db = get_db()
     try:
-        stats = db.get_ip_stats_by_ip(ip_address)
+        stats = await asyncio.to_thread(db.get_ip_stats_by_ip, ip_address)
         config = request.app.state.config
         dashboard_path = "/" + config.dashboard_secret_path.lstrip("/")
 
@@ -77,9 +84,9 @@ async def ip_page(ip_address: str, request: Request):
 
             templates = get_templates()
             return templates.TemplateResponse(
+                request,
                 "dashboard/ip.html",
                 {
-                    "request": request,
                     "dashboard_path": dashboard_path,
                     "stats": clean_stats,
                     "ip_address": ip_address,

@@ -39,6 +39,7 @@
 - [Demo](#demo)
 - [What is Krawl?](#what-is-krawl)
 - [Krawl Dashboard](#krawl-dashboard)
+- [Deployment Modes](#deployment-modes)
 - [Quickstart](#quickstart)
   - [Docker Run](#docker-run)
   - [Docker Compose](#docker-compose)
@@ -110,17 +111,38 @@ Additionally, after authenticating with the dashboard password, two protected ta
 For more details, see the [Dashboard documentation](docs/dashboard.md).
 
 
+## Deployment Modes
+
+Krawl supports two deployment modes, controlled by the `mode` setting in `config.yaml` or the `KRAWL_MODE` environment variable.
+
+| | Standalone | Scalable |
+|---|---|---|
+| **Database** | SQLite (WAL mode) | PostgreSQL |
+| **Cache** | In-memory Python dict | Redis (multi-tier TTL) |
+| **Replicas** | 1 (single instance) | 1+ (horizontal scaling) |
+| **External deps** | None | PostgreSQL + Redis |
+| **Best for** | Dev, homelabs, <500k requests | Production, HA, >500k requests |
+
+**Standalone** — ideal for development environments or homelabs with low request counts. Zero additional configuration needed, just run Krawl and it works.
+- Single container deployment — no external dependencies
+- Lower RAM and resource usage
+
+**Scalable** — designed for production environments or high-traffic honeypots. The Helm chart defaults to this mode.
+- Faster, more responsive dashboard thanks to Redis multi-tier caching
+- Lower disk I/O with Redis acting as a hot-path cache in front of PostgreSQL
+- Horizontal scaling — increase the number of Krawl replicas behind a load balancer
+
+For detailed configuration, Docker Compose examples, Kubernetes/Helm setup, and step-by-step migration instructions, see the [Deployment Modes documentation](docs/deployment-modes.md).
+
 ## Quickstart
 
 ### Docker Run
 
-Run Krawl with the latest image:
+Run Krawl in standalone mode with the latest image:
 
 ```bash
 docker run -d \
   -p 5000:5000 \
-  -e KRAWL_PORT=5000 \
-  -e KRAWL_DELAY=100 \
   -e KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard" \
   -e KRAWL_DASHBOARD_PASSWORD="my-secret-password" \
   -v krawl-data:/app/data \
@@ -132,7 +154,9 @@ Access the server at `http://localhost:5000`
 
 ### Docker Compose
 
-Create a `docker-compose.yaml` file:
+Create a `docker-compose.yaml` with one of the two deployment modes.
+
+**Standalone** — just Krawl server with Sqlite storage:
 
 ```yaml
 services:
@@ -143,12 +167,9 @@ services:
       - "5000:5000"
     environment:
       - CONFIG_LOCATION=config.yaml
-      - TZ=Europe/Rome
-      # - KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
       # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      # bind mount for firewall exporters
       - ./exports:/app/exports
       - krawl-data:/app/data
     restart: unless-stopped
@@ -157,20 +178,98 @@ volumes:
   krawl-data:
 ```
 
-Run with:
+**Scalable** — with PostgreSQL and Redis:
 
-```bash
-docker-compose up -d
+> [!CAUTION]
+> The example below uses **default passwords** (`krawl`/`krawl`). **Change them before deploying to production.**
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: krawl
+      POSTGRES_USER: krawl
+      POSTGRES_PASSWORD: krawl
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U krawl -d krawl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  krawl:
+    image: ghcr.io/blessedrebus/krawl:latest
+    container_name: krawl-server
+    ports:
+      - "5000:5000"
+    environment:
+      - CONFIG_LOCATION=config.yaml
+      - KRAWL_MODE=scalable
+      - KRAWL_POSTGRES_HOST=postgres
+      - KRAWL_POSTGRES_PORT=5432
+      - KRAWL_POSTGRES_USER=krawl
+      - KRAWL_POSTGRES_PASSWORD=krawl
+      - KRAWL_POSTGRES_DATABASE=krawl
+      - KRAWL_REDIS_HOST=redis
+      - KRAWL_REDIS_PORT=6379
+      # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./exports:/app/exports
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
 ```
 
-Stop with:
-
+To deploy, just run
 ```bash
-docker-compose down
+docker compose up -d
 ```
+
+Production-ready compose files are also available in the [`docker/`](docker/) directory. For **development** (builds from source with hot-reload), use the compose files at the project root.
+
+For more details on both modes, see [Deployment Modes](docs/deployment-modes.md).
 
 ### Kubernetes
-**Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the helm chart](helm/README.md).
+**Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the Helm chart](helm/README.md).
+
+The Helm chart **defaults to scalable mode** with bundled PostgreSQL and Redis:
+
+```bash
+helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 1.3.3 \
+  -n krawl-system --create-namespace \
+  --set postgres.password=your-password \
+  --set redis.password=your-redis-password \
+  --set dashboardPassword=your-dashboard-password \
+  --set config.dashboard.secret_path=/my-secret-dashboard
+```
+
+Minimal example values files are provided for both modes:
+- [`values-minimal.yaml`](helm/values-minimal.yaml) — Scalable (default)
+- [`values-standalone.yaml`](helm/values-standalone.yaml) — Standalone
+
+See [Deployment Modes](docs/deployment-modes.md) and [Chart documentation](helm/README.md) for full configuration and migration instructions.
 
 ### Uvicorn (Python)
 
@@ -229,6 +328,17 @@ You can use the [config.yaml](config.yaml) file for advanced configurations, suc
 | `KRAWL_AI_TIMEOUT` | Request timeout in seconds for AI API calls | `60` |
 | `KRAWL_AI_MAX_DAILY_REQUESTS` | Max number of AI-generated pages per day (0 = unlimited) | `0` |
 | `KRAWL_AI_PROMPT` | Custom prompt template for AI page generation | Default prompt |
+| **Scalable mode** | | |
+| `KRAWL_MODE` | Deployment mode (`standalone` or `scalable`) | `standalone` |
+| `KRAWL_POSTGRES_HOST` | PostgreSQL hostname | `localhost` |
+| `KRAWL_POSTGRES_PORT` | PostgreSQL port | `5432` |
+| `KRAWL_POSTGRES_USER` | PostgreSQL username | `krawl` |
+| `KRAWL_POSTGRES_PASSWORD` | PostgreSQL password | `krawl` |
+| `KRAWL_POSTGRES_DATABASE` | PostgreSQL database name | `krawl` |
+| `KRAWL_REDIS_HOST` | Redis hostname | `localhost` |
+| `KRAWL_REDIS_PORT` | Redis port | `6379` |
+| `KRAWL_REDIS_DB` | Redis database number | `0` |
+| `KRAWL_REDIS_PASSWORD` | Redis password | None |
 
 For example
 
@@ -249,11 +359,12 @@ export KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
 export KRAWL_DASHBOARD_PASSWORD="my-secret-password"
 ```
 
-Example of a Docker run with env variables:
+Example of a Docker run with env variables (standalone mode):
 
 ```bash
 docker run -d \
   -p 5000:5000 \
+  -e KRAWL_MODE=standalone \
   -e KRAWL_PORT=5000 \
   -e KRAWL_DELAY=100 \
   -e KRAWL_DASHBOARD_PASSWORD="my-secret-password" \
@@ -339,6 +450,7 @@ location / {
 | Topic | Description |
 |-------|-------------|
 | [AI Generation](docs/AI_GENERATION.md) | Configure AI-generated deception pages using OpenRouter or OpenAI |
+| [Deployment Modes](docs/deployment-modes.md) | Standalone (SQLite) vs Scalable (PostgreSQL + Redis) mode, configuration, and data migration |
 | [Honeypot](docs/honeypot.md) | Full overview of honeypot pages: fake logins, directory listings, credential files, SQLi/XSS/XXE/command injection traps, and more |
 | [Dashboard](docs/dashboard.md) | Access and explore the real-time monitoring dashboard |
 | [API](docs/api.md) | External APIs used by Krawl for IP data, reputation, and geolocation |

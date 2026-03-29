@@ -10,6 +10,7 @@ from typing import Optional, List, Dict
 
 from sqlalchemy import (
     String,
+    Text,
     Integer,
     Boolean,
     DateTime,
@@ -64,7 +65,7 @@ class AccessLog(Base):
         DateTime, nullable=False, default=datetime.utcnow, index=True
     )
     # Raw HTTP request for forensic analysis (nullable for backward compatibility)
-    raw_request: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    raw_request: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     # Relationship to attack detections
     attack_detections: Mapped[List["AttackDetection"]] = relationship(
@@ -76,6 +77,8 @@ class AccessLog(Base):
         Index("ix_access_logs_ip_timestamp", "ip", "timestamp"),
         Index("ix_access_logs_is_suspicious", "is_suspicious"),
         Index("ix_access_logs_is_honeypot_trigger", "is_honeypot_trigger"),
+        Index("ix_access_logs_path", "path"),
+        Index("ix_access_logs_user_agent", "user_agent"),
     )
 
     def __repr__(self) -> str:
@@ -196,7 +199,7 @@ class IpStats(Base):
 
     # Analyzed metrics, category and category scores
     analyzed_metrics: Mapped[Dict[str, object]] = mapped_column(JSON, nullable=True)
-    category: Mapped[str] = mapped_column(String, nullable=True)
+    category: Mapped[str] = mapped_column(String(50), nullable=True)
     category_scores: Mapped[Dict[str, int]] = mapped_column(JSON, nullable=True)
     manual_category: Mapped[bool] = mapped_column(Boolean, default=False, nullable=True)
     last_analysis: Mapped[datetime] = mapped_column(DateTime, nullable=True)
@@ -213,6 +216,12 @@ class IpStats(Base):
     # Admin ban override: True = force ban, False = force unban, None = automatic
     ban_override: Mapped[Optional[bool]] = mapped_column(
         Boolean, nullable=True, default=None
+    )
+
+    __table_args__ = (
+        Index("ix_ip_stats_category", "category"),
+        Index("ix_ip_stats_need_reevaluation", "need_reevaluation"),
+        Index("ix_ip_stats_total_requests", "total_requests"),
     )
 
     def __repr__(self) -> str:

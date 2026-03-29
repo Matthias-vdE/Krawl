@@ -6,12 +6,14 @@ Server-rendered HTML partials for table pagination, sorting, IP details, and sea
 """
 
 import asyncio
+
 from fastapi import APIRouter, Request, Response, Query
 from fastapi.responses import HTMLResponse
 
 from dependencies import get_db, get_templates
 from routes.api import verify_auth
-from dashboard_cache import get_cached, is_warm
+from config import get_config
+from dashboard_cache import get_cached, is_warm, get_cached_table, set_cached_table
 
 router = APIRouter()
 
@@ -31,10 +33,21 @@ async def htmx_honeypot(
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_honeypot_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
-    )
+    page = max(1, page)
+    cache_key = f"honeypot:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_honeypot_paginated,
+            page=page,
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        set_cached_table(cache_key, result)
 
     templates = get_templates()
     return templates.TemplateResponse(
@@ -63,15 +76,25 @@ async def htmx_top_ips(
     # Serve from cache on default first-page request
     cached = (
         get_cached("top_ips")
-        if (page == 1 and sort_by == "count" and sort_order == "desc" and is_warm())
+        if (
+            get_config().dashboard_cache_warmup
+            and page == 1
+            and sort_by == "count"
+            and sort_order == "desc"
+            and is_warm()
+        )
         else None
     )
     if cached:
         result = cached
     else:
         db = get_db()
-        result = db.get_top_ips_paginated(
-            page=max(1, page), page_size=8, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_ips_paginated,
+            page=max(1, page),
+            page_size=8,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     templates = get_templates()
@@ -100,15 +123,25 @@ async def htmx_top_paths(
 ):
     cached = (
         get_cached("top_paths")
-        if (page == 1 and sort_by == "count" and sort_order == "desc" and is_warm())
+        if (
+            get_config().dashboard_cache_warmup
+            and page == 1
+            and sort_by == "count"
+            and sort_order == "desc"
+            and is_warm()
+        )
         else None
     )
     if cached:
         result = cached
     else:
         db = get_db()
-        result = db.get_top_paths_paginated(
-            page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_paths_paginated,
+            page=max(1, page),
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     templates = get_templates()
@@ -194,15 +227,25 @@ async def htmx_top_ua(
 ):
     cached = (
         get_cached("top_ua")
-        if (page == 1 and sort_by == "count" and sort_order == "desc" and is_warm())
+        if (
+            get_config().dashboard_cache_warmup
+            and page == 1
+            and sort_by == "count"
+            and sort_order == "desc"
+            and is_warm()
+        )
         else None
     )
     if cached:
         result = cached
     else:
         db = get_db()
-        result = db.get_top_user_agents_paginated(
-            page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_user_agents_paginated,
+            page=max(1, page),
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
 
     templates = get_templates()
@@ -229,10 +272,21 @@ async def htmx_attackers(
     sort_by: str = Query("total_requests"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_attackers_paginated(
-        page=max(1, page), page_size=25, sort_by=sort_by, sort_order=sort_order
-    )
+    page = max(1, page)
+    cache_key = f"attackers:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_attackers_paginated,
+            page=page,
+            page_size=25,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        set_cached_table(cache_key, result)
 
     # Normalize pagination key (DB returns total_attackers, template expects total)
     pagination = result["pagination"]
@@ -262,20 +316,28 @@ async def htmx_access_logs_by_ip(
     page: int = Query(1),
     sort_by: str = Query("total_requests"),
     sort_order: str = Query("desc"),
-    ip_filter: str = Query("ip_filter"),
+    ip_filter: str = Query(None),
 ):
-    db = get_db()
-    result = db.get_access_logs_paginated(
-        page=max(1, page),
-        page_size=25,
-        ip_filter=ip_filter,
-        sort_order=sort_order if sort_order in ("asc", "desc") else "desc",
-    )
+    page = max(1, page)
+    cache_key = f"access_logs:{page}:{sort_order}:{ip_filter or ''}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_access_logs_paginated,
+            page=page,
+            page_size=25,
+            ip_filter=ip_filter,
+            sort_order=sort_order if sort_order in ("asc", "desc") else "desc",
+        )
+        set_cached_table(cache_key, result)
 
-    # Normalize pagination key (DB returns total_attackers, template expects total)
+    # Normalize pagination key (DB returns total_logs, template expects total)
     pagination = result["pagination"]
-    if "total_access_logs" in pagination and "total" not in pagination:
-        pagination["total"] = pagination["total_access_logs"]
+    if "total_logs" in pagination and "total" not in pagination:
+        pagination["total"] = pagination["total_logs"]
 
     templates = get_templates()
     return templates.TemplateResponse(
@@ -302,10 +364,21 @@ async def htmx_credentials(
     sort_by: str = Query("timestamp"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_credentials_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
-    )
+    page = max(1, page)
+    cache_key = f"credentials:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_credentials_paginated,
+            page=page,
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        set_cached_table(cache_key, result)
 
     templates = get_templates()
     return templates.TemplateResponse(
@@ -332,14 +405,22 @@ async def htmx_attacks(
     sort_order: str = Query("desc"),
     ip_filter: str = Query(None),
 ):
-    db = get_db()
-    result = db.get_attack_types_paginated(
-        page=max(1, page),
-        page_size=5,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        ip_filter=ip_filter,
-    )
+    page = max(1, page)
+    cache_key = f"attacks:{page}:{sort_by}:{sort_order}:{ip_filter or ''}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_attack_types_paginated,
+            page=page,
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            ip_filter=ip_filter,
+        )
+        set_cached_table(cache_key, result)
 
     # Transform attack data for template (join attack_types list, map id to log_id)
     items = []
@@ -378,12 +459,18 @@ async def htmx_patterns(
     request: Request,
     page: int = Query(1),
 ):
-    db = get_db()
     page = max(1, page)
     page_size = 10
 
-    # Get all attack type stats and paginate manually
-    result = db.get_attack_types_stats(limit=100)
+    cache_key = f"patterns:{page}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        # Get all attack type stats and paginate manually
+        result = await asyncio.to_thread(db.get_attack_types_stats, limit=100)
+        set_cached_table(cache_key, result)
     all_patterns = [
         {"pattern": item["type"], "count": item["count"]}
         for item in result.get("attack_types", [])
@@ -417,7 +504,7 @@ async def htmx_patterns(
 @router.get("/htmx/ip-insight/{ip_address:path}")
 async def htmx_ip_insight(ip_address: str, request: Request):
     db = get_db()
-    stats = db.get_ip_stats_by_ip(ip_address)
+    stats = await asyncio.to_thread(db.get_ip_stats_by_ip, ip_address)
 
     if not stats:
         stats = {"ip": ip_address, "total_requests": "N/A"}
@@ -457,7 +544,7 @@ async def htmx_ip_insight(ip_address: str, request: Request):
 @router.get("/htmx/ip-detail/{ip_address:path}")
 async def htmx_ip_detail(ip_address: str, request: Request):
     db = get_db()
-    stats = db.get_ip_stats_by_ip(ip_address)
+    stats = await asyncio.to_thread(db.get_ip_stats_by_ip, ip_address)
 
     if not stats:
         stats = {"ip": ip_address, "total_requests": "N/A"}
@@ -504,7 +591,9 @@ async def htmx_search(
         return Response(content="", media_type="text/html")
 
     db = get_db()
-    result = db.search_attacks_and_ips(query=q, page=max(1, page), page_size=20)
+    result = await asyncio.to_thread(
+        db.search_attacks_and_ips, query=q, page=max(1, page), page_size=20
+    )
 
     templates = get_templates()
     return templates.TemplateResponse(
@@ -544,30 +633,6 @@ async def htmx_banlist(request: Request):
     )
 
 
-# ── Deception Templates Panel ────────────────────────────────────────
-
-
-@router.get("/htmx/deception")
-async def htmx_deception(request: Request):
-    if not verify_auth(request):
-        return HTMLResponse(
-            '<div class="table-container" style="text-align:center;padding:80px 20px;">'
-            '<h1 style="color:#f0883e;font-size:48px;margin:20px 0 10px;">Nice try bozo</h1>'
-            "<br>"
-            '<img src="https://media0.giphy.com/media/v1.Y2lkPTZjMDliOTUyaHQ3dHRuN2wyOW1kZndjaHdkY2dhYzJ6d2gzMDJkNm53ZnNrdnNlZCZlcD12MV9naWZzX3NlYXJjaCZjdD1n/mOY97EXNisstZqJht9/200w.gif" alt="Diddy">'
-            "</div>",
-            status_code=200,
-        )
-    templates = get_templates()
-    return templates.TemplateResponse(
-        request,
-        "dashboard/partials/deception_panel.html",
-        {
-            "dashboard_path": _dashboard_path(request),
-        },
-    )
-
-
 # ── Ban Management HTMX Endpoints ───────────────────────────────────
 
 
@@ -583,7 +648,9 @@ async def htmx_ban_attackers(
         )
 
     db = get_db()
-    result = db.get_attackers_paginated(page=max(1, page), page_size=page_size)
+    result = await asyncio.to_thread(
+        db.get_attackers_paginated, page=max(1, page), page_size=page_size
+    )
     templates = get_templates()
     return templates.TemplateResponse(
         request,
@@ -632,7 +699,9 @@ async def htmx_tracked_ips_list(
         )
 
     db = get_db()
-    result = db.get_tracked_ips_paginated(page=max(1, page), page_size=page_size)
+    result = await asyncio.to_thread(
+        db.get_tracked_ips_paginated, page=max(1, page), page_size=page_size
+    )
     templates = get_templates()
     return templates.TemplateResponse(
         request,
@@ -657,7 +726,9 @@ async def htmx_ban_overrides(
         )
 
     db = get_db()
-    result = db.get_ban_overrides_paginated(page=max(1, page), page_size=page_size)
+    result = await asyncio.to_thread(
+        db.get_ban_overrides_paginated, page=max(1, page), page_size=page_size
+    )
     templates = get_templates()
     return templates.TemplateResponse(
         request,
