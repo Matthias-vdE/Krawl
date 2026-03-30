@@ -278,9 +278,8 @@ class Config:
             ai_provider=ai.get("provider", "openrouter").lower(),
             ai_api_key=ai.get("api_key"),
             ai_model=ai.get("model", "nvidia/nemotron-3-super-120b-a12b:free"),
-            reasoning=ai.get("reasoning", {}),
-            ai_reasoning_enabled=reasoning.get("enabled", True),
-            ai_reasoning_effort=reasoning.get("effort", "medium"),
+            ai_reasoning_enabled=ai.get("reasoning", {}).get("enabled", True),
+            ai_reasoning_effort=ai.get("reasoning", {}).get("effort", "medium"),
             ai_prompt=ai.get(
                 "prompt",
                 """Your goal is to create a plausible but fake intentionally vulnerable page that might appear on a real server, that can distract attackers. 
