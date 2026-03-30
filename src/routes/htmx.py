@@ -158,6 +158,84 @@ async def htmx_top_paths(
     )
 
 
+# ── Generated Deception Templates ────────────────────────────────────
+
+
+@router.get("/htmx/deception")
+async def htmx_deception(request: Request):
+    """Load the deception panel with generated pages management interface."""
+    templates = get_templates()
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/deception_panel.html",
+        {
+            "dashboard_path": _dashboard_path(request),
+        },
+    )
+
+
+@router.get("/htmx/generated-pages")
+async def htmx_generated_pages(
+    request: Request,
+    page: int = Query(1),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+):
+    """Authenticated generated pages endpoint with checkboxes for deletion."""
+    db = get_db()
+    result = await asyncio.to_thread(
+        db.get_generated_pages_paginated,
+        page=max(1, page),
+        page_size=5,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/generated_pages_table.html",
+        {
+            "dashboard_path": _dashboard_path(request),
+            "items": result["generated_pages"],
+            "pagination": result["pagination"],
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        },
+    )
+
+
+@router.get("/htmx/generated-pages/readonly")
+async def htmx_generated_pages_readonly(
+    request: Request,
+    page: int = Query(1),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+):
+    """Read-only generated pages endpoint (no authentication required, no checkboxes)."""
+    db = get_db()
+    result = await asyncio.to_thread(
+        db.get_generated_pages_paginated,
+        page=max(1, page),
+        page_size=5,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/generated_pages_table_readonly.html",
+        {
+            "dashboard_path": _dashboard_path(request),
+            "items": result["generated_pages"],
+            "pagination": result["pagination"],
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        },
+    )
+
+
 # ── Top User-Agents ─────────────────────────────────────────────────
 
 
@@ -457,6 +535,15 @@ async def htmx_ip_insight(ip_address: str, request: Request):
     stats["blocklist_memberships"] = list(list_on.keys()) if list_on else []
     stats["reverse_dns"] = stats.get("reverse")
 
+    # Filter out unhashable types (dicts, lists) for Jinja2 template engine compatibility
+    clean_stats = {}
+    for k, v in stats.items():
+        if isinstance(v, (int, str, float, type(None), bool)):
+            clean_stats[k] = v
+        elif k == "blocklist_memberships" and isinstance(v, list):
+            # Keep list of strings (blocklist names)
+            clean_stats[k] = v
+
     is_tracked = await asyncio.to_thread(db.is_ip_tracked, ip_address)
 
     templates = get_templates()
@@ -465,7 +552,7 @@ async def htmx_ip_insight(ip_address: str, request: Request):
         "dashboard/partials/ip_insight.html",
         {
             "dashboard_path": _dashboard_path(request),
-            "stats": stats,
+            "stats": clean_stats,
             "ip_address": ip_address,
             "is_tracked": is_tracked,
         },
@@ -488,6 +575,15 @@ async def htmx_ip_detail(ip_address: str, request: Request):
     stats["blocklist_memberships"] = list(list_on.keys()) if list_on else []
     stats["reverse_dns"] = stats.get("reverse")
 
+    # Filter out unhashable types (dicts, lists) for Jinja2 template engine compatibility
+    clean_stats = {}
+    for k, v in stats.items():
+        if isinstance(v, (int, str, float, type(None), bool)):
+            clean_stats[k] = v
+        elif k == "blocklist_memberships" and isinstance(v, list):
+            # Keep list of strings (blocklist names)
+            clean_stats[k] = v
+
     is_tracked = await asyncio.to_thread(db.is_ip_tracked, ip_address)
 
     templates = get_templates()
@@ -496,7 +592,7 @@ async def htmx_ip_detail(ip_address: str, request: Request):
         "dashboard/partials/ip_detail.html",
         {
             "dashboard_path": _dashboard_path(request),
-            "stats": stats,
+            "stats": clean_stats,
             "is_tracked": is_tracked,
         },
     )
