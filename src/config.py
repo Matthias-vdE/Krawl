@@ -278,23 +278,25 @@ class Config:
             ai_provider=ai.get("provider", "openrouter").lower(),
             ai_api_key=ai.get("api_key"),
             ai_model=ai.get("model", "nvidia/nemotron-3-super-120b-a12b:free"),
-            reasoning = ai.get("reasoning", {})
+            reasoning=ai.get("reasoning", {}),
             ai_reasoning_enabled=reasoning.get("enabled", True),
             ai_reasoning_effort=reasoning.get("effort", "medium"),
             ai_prompt=ai.get(
                 "prompt",
-                """Generate a realistic HTML page for the following request:
-Path: {path}{query_part}
+                """Your goal is to create a plausible but fake intentionally vulnerable page that might appear on a real server, that can distract attackers. 
+Your input will be a query path, that the attacker asked for. 
 
-The page should:
-1. Be a plausible but fake page that might appear on a real server
-2. Include realistic content (links, text, forms, etc.)
-3. NOT reveal it's a honeypot
-4. Be in HTML format only (no markdown, code blocks, or explanation)
+Follow this rules:
+1. You must output ONLY the HTML, nothing else
+2. Include realistic content if necessary (links, text, forms, etc.)
+3. Do not add markdown, code blocks, or explanations
+4. Do not include any file in the html, generate everything needed in one single file
 5. Include proper HTML structure with head and body tags
-6. Return ONLY the HTML, nothing else
+6. If the request is a common attack vector (e.g., SQLi, XSS), include fake data in response
+7. If the request has a file extension, generate a RAW content relevant to that type (e.g. a fake json for .json requests)
 
-Generate the complete HTML page:""",
+Path: {path}{query_part}
+Generate the complete HTML page.""",
             ),
             ai_timeout=ai.get("timeout", 60),
             ai_max_daily_requests=ai.get("max_daily_requests", 0),

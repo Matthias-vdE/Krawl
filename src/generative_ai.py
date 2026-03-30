@@ -260,7 +260,7 @@ async def call_openrouter(
     model: str,
     prompt: str,
     timeout: int = 30,
-    reasoning_enabled: bool = True
+    reasoning_enabled: bool = True,
 ) -> str:
     """Call OpenRouter API asynchronously and return the response.
 
@@ -283,7 +283,7 @@ async def call_openrouter(
         prompt=prompt,
         timeout=timeout,
         provider="OpenRouter",
-        reasoning_enabled=reasoning_enabled
+        reasoning_enabled=reasoning_enabled,
     )
 
 
@@ -292,7 +292,7 @@ async def call_openai(
     model: str,
     prompt: str,
     timeout: int = 30,
-    reasoning_effort: str = "medium"
+    reasoning_effort: str = "medium",
 ) -> str:
     """Call OpenAI API asynchronously and return the response.
 
@@ -315,7 +315,7 @@ async def call_openai(
         prompt=prompt,
         timeout=timeout,
         provider="OpenAI",
-        reasoning_effort=reasoning_effort
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -354,7 +354,11 @@ async def _call_api(
             },
             {"role": "user", "content": prompt},
         ],
-        "reasoning": {"effort": reasoning_effort} if provider.lower() == 'openai' else {"enabled": reasoning_enabled}
+        "reasoning": (
+            {"effort": reasoning_effort}
+            if provider.lower() == "openai"
+            else {"enabled": reasoning_enabled}
+        ),
     }
 
     headers = {
@@ -470,11 +474,19 @@ async def generate_html_for_path(
 
         if provider == "openai":
             html_content = await call_openai(
-                api_key=api_key, model=model, prompt=prompt, timeout=timeout, reasoning_effort=reasoning_effort
+                api_key=api_key,
+                model=model,
+                prompt=prompt,
+                timeout=timeout,
+                reasoning_effort=reasoning_effort,
             )
         else:  # openrouter
             html_content = await call_openrouter(
-                api_key=api_key, model=model, prompt=prompt, timeout=timeout, reasoning_enabled=reasoning_enabled
+                api_key=api_key,
+                model=model,
+                prompt=prompt,
+                timeout=timeout,
+                reasoning_enabled=reasoning_enabled,
             )
 
         # Strip markdown code blocks if present (common LLM behavior)
