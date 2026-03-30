@@ -50,7 +50,7 @@ def _format_ts(value, time_only=False):
         return value.strftime("%H:%M:%S")
     if value.date() == datetime.now().date():
         return value.strftime("%H:%M:%S")
-    return value.strftime("%m/%d/%Y %H:%M:%S")
+    return value.strftime("%d/%m/%Y %H:%M:%S")
 
 
 def get_tracker(request: Request) -> AccessTracker:

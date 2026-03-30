@@ -689,7 +689,7 @@ function formatTimestamp(isoTimestamp) {
     if (!isoTimestamp) return 'N/A';
     try {
         const date = new Date(isoTimestamp);
-        return date.toLocaleString('en-US', {
+        return date.toLocaleString('en-GB', {
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
         });
