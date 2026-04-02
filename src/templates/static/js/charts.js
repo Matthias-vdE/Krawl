@@ -354,9 +354,13 @@ function _updateTrendsPeriodLabel(dates) {
         return;
     }
 
-    const start = new Date(dates[0] + 'T00:00:00');
-    const end = new Date(dates[dates.length - 1] + 'T00:00:00');
-    const fmt = { month: 'short', day: 'numeric' };
+    const isHourly = dates[0].includes(':');
+    const parseDate = d => isHourly ? new Date(d.replace(' ', 'T')) : new Date(d + 'T00:00:00');
+    const start = parseDate(dates[0]);
+    const end = parseDate(dates[dates.length - 1]);
+    const fmt = isHourly
+        ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
+        : { month: 'short', day: 'numeric' };
     label.textContent = `${start.toLocaleDateString('en-US', fmt)} — ${end.toLocaleDateString('en-US', fmt)}`;
 }
 
