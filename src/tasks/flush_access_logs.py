@@ -16,10 +16,12 @@ app_logger = get_app_logger()
 # ----------------------
 # TASK CONFIG
 # ----------------------
+# Only enable in scalable mode (buffered writes require PostgreSQL)
+_config = get_config()
 TASK_CONFIG = {
     "name": "flush-access-logs",
     "cron": "*/1 * * * *",  # Cron is coarse; the real interval is the 30s trigger below
-    "enabled": True,
+    "enabled": _config.mode == "scalable",
     "run_when_loaded": False,
     "interval_seconds": 30,  # Override cron with a fixed interval
 }
@@ -29,10 +31,6 @@ TASK_CONFIG = {
 # TASK LOGIC
 # ----------------------
 def main():
-    config = get_config()
-    if config.mode != "scalable":
-        return
-
     from database import get_database, get_write_buffer_size
 
     buf_size = get_write_buffer_size()
