@@ -191,6 +191,9 @@ document.addEventListener('alpine:init', () => {
                         loadAttackTypesChart();
                         this.chartLoaded = true;
                     }
+                    if (typeof loadAttackTrendsChart === 'function') {
+                        loadAttackTrendsChart();
+                    }
                 }, 200);
             });
         },
