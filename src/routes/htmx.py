@@ -186,7 +186,7 @@ async def htmx_generated_pages(
     result = await asyncio.to_thread(
         db.get_generated_pages_paginated,
         page=max(1, page),
-        page_size=5,
+        page_size=15,
         sort_by=sort_by,
         sort_order=sort_order,
     )
@@ -217,7 +217,7 @@ async def htmx_generated_pages_readonly(
     result = await asyncio.to_thread(
         db.get_generated_pages_paginated,
         page=max(1, page),
-        page_size=5,
+        page_size=15,
         sort_by=sort_by,
         sort_order=sort_order,
     )
