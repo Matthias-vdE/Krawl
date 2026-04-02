@@ -295,66 +295,49 @@ async function fetchAndBuildMap(limit) {
     });
     attackerMap.addLayer(clusterGroup);
 
-    if (limit === 'all') {
-        // Stream pages of 1000, adding each batch with pop animation
-        let page = 1;
-        const pageSize = 1000;
-        while (true) {
-            const response = await fetch(
-                `${DASHBOARD_PATH}/api/all-ips?page=${page}&page_size=${pageSize}&sort_by=total_requests&sort_order=desc`,
-                { cache: 'no-store', headers }
-            );
-            if (!response.ok) throw new Error('Failed to fetch IPs');
-            const data = await response.json();
-            const batch = data.ips || [];
-            allIps = allIps.concat(batch);
+    const pageSize = 5000;
+    const maxIps = limit === 'all' ? Infinity : parseInt(limit, 10);
+    let page = 1;
 
-            // Build markers for this batch with pop animation
-            const batchMarkers = [];
-            batch.forEach(ip => {
-                if (!ip.country_code || !ip.category) return;
-                const marker = _createIpMarker(ip, true);
-                if (marker) {
-                    mapMarkers.push(marker);
-                    batchMarkers.push(marker);
-                }
-            });
+    while (true) {
+        const fetchSize = Math.min(pageSize, maxIps - allIps.length);
+        if (fetchSize <= 0) break;
 
-            // Add batch to cluster group (triggers pop-in)
-            if (batchMarkers.length > 0) {
-                const visible = batchMarkers.filter(m => !hiddenCategories.has(m.options.category));
-                clusterGroup.addLayers(visible);
-            }
-
-            // Update overlay counter
-            const overlay = document.getElementById('map-loading-overlay');
-            if (overlay) overlay.textContent = `Loading IPs... ${allIps.length} loaded`;
-
-            if (page >= data.pagination.total_pages) break;
-            page++;
-
-            // Small delay to let the browser paint the batch
-            await new Promise(r => setTimeout(r, 80));
-        }
-    } else {
-        // Single fetch, no animation needed
-        const pageSize = parseInt(limit, 10);
         const response = await fetch(
-            `${DASHBOARD_PATH}/api/all-ips?page=1&page_size=${pageSize}&sort_by=total_requests&sort_order=desc`,
+            `${DASHBOARD_PATH}/api/all-ips?page=${page}&page_size=${fetchSize}&sort_by=total_requests&sort_order=desc`,
             { cache: 'no-store', headers }
         );
         if (!response.ok) throw new Error('Failed to fetch IPs');
         const data = await response.json();
-        allIps = data.ips || [];
+        const batch = data.ips || [];
+        allIps = allIps.concat(batch);
 
-        allIps.forEach(ip => {
+        // Build markers for this batch with pop animation
+        const batchMarkers = [];
+        batch.forEach(ip => {
             if (!ip.country_code || !ip.category) return;
-            const marker = _createIpMarker(ip, false);
-            if (marker) mapMarkers.push(marker);
+            const marker = _createIpMarker(ip, true);
+            if (marker) {
+                mapMarkers.push(marker);
+                batchMarkers.push(marker);
+            }
         });
 
-        const visible = mapMarkers.filter(m => !hiddenCategories.has(m.options.category));
-        clusterGroup.addLayers(visible);
+        // Add batch to cluster group (triggers pop-in)
+        if (batchMarkers.length > 0) {
+            const visible = batchMarkers.filter(m => !hiddenCategories.has(m.options.category));
+            clusterGroup.addLayers(visible);
+        }
+
+        // Update overlay counter
+        const overlay = document.getElementById('map-loading-overlay');
+        if (overlay) overlay.textContent = `Loading IPs... ${allIps.length} loaded`;
+
+        if (batch.length < fetchSize || page >= data.pagination.total_pages) break;
+        page++;
+
+        // Small delay to let the browser paint the batch
+        await new Promise(r => setTimeout(r, 80));
     }
 
     // Fit bounds to visible markers
