@@ -187,7 +187,7 @@ async function loadAttackTypesChart(canvasId, ipFilter, legendPosition) {
  */
 let attackTrendsChart = null;
 let _trendsOffsetDays = 0;
-let _trendsDays = 30;
+let _trendsDays = 7;
 
 // Hash-based consistent colors (shared with doughnut chart)
 function _trendsHashCode(str) {
