@@ -1504,6 +1504,9 @@ class DatabaseManager:
         """
         Retrieve paginated list of all IPs (or filtered by categories) ordered by specified field.
 
+        Uses column projection to only SELECT the fields needed for map rendering,
+        avoiding loading heavy JSON blobs and unused columns from IpStats.
+
         Args:
             page: Page number (1-indexed)
             page_size: Number of results per page
@@ -1525,8 +1528,26 @@ class DatabaseManager:
                 sort_order.lower() if sort_order.lower() in {"asc", "desc"} else "desc"
             )
 
-            # Build query with optional category filter
-            query = session.query(IpStats)
+            # Only SELECT columns needed for map rendering — skip heavy JSON
+            # blobs (analyzed_metrics, category_scores, list_on) and unused
+            # columns (ban_*, is_proxy, is_hosting, reputation_updated, etc.)
+            map_columns = [
+                IpStats.ip,
+                IpStats.total_requests,
+                IpStats.first_seen,
+                IpStats.last_seen,
+                IpStats.country_code,
+                IpStats.city,
+                IpStats.latitude,
+                IpStats.longitude,
+                IpStats.asn,
+                IpStats.asn_org,
+                IpStats.reputation_score,
+                IpStats.reputation_source,
+                IpStats.category,
+            ]
+
+            query = session.query(*map_columns)
             count_query = session.query(func.count(IpStats.ip))
             if categories:
                 query = query.filter(IpStats.category.in_(categories))
@@ -1536,51 +1557,42 @@ class DatabaseManager:
             total_ips = count_query.scalar() or 0
 
             # Apply sorting
-            if sort_by == "total_requests":
-                query = query.order_by(
-                    IpStats.total_requests.desc()
-                    if sort_order == "desc"
-                    else IpStats.total_requests.asc()
-                )
-            elif sort_by == "first_seen":
-                query = query.order_by(
-                    IpStats.first_seen.desc()
-                    if sort_order == "desc"
-                    else IpStats.first_seen.asc()
-                )
-            elif sort_by == "last_seen":
-                query = query.order_by(
-                    IpStats.last_seen.desc()
-                    if sort_order == "desc"
-                    else IpStats.last_seen.asc()
-                )
+            sort_column = {
+                "total_requests": IpStats.total_requests,
+                "first_seen": IpStats.first_seen,
+                "last_seen": IpStats.last_seen,
+            }[sort_by]
+            query = query.order_by(
+                sort_column.desc() if sort_order == "desc" else sort_column.asc()
+            )
 
             # Get paginated IPs
-            ips = query.offset(offset).limit(page_size).all()
+            rows = query.offset(offset).limit(page_size).all()
 
             total_pages = (total_ips + page_size - 1) // page_size
 
             return {
                 "ips": [
                     {
-                        "ip": ip.ip,
-                        "total_requests": ip.total_requests,
+                        "ip": row.ip,
+                        "total_requests": row.total_requests,
                         "first_seen": (
-                            ip.first_seen.isoformat() if ip.first_seen else None
+                            row.first_seen.isoformat() if row.first_seen else None
                         ),
-                        "last_seen": ip.last_seen.isoformat() if ip.last_seen else None,
-                        "country_code": ip.country_code,
-                        "city": ip.city,
-                        "latitude": ip.latitude,
-                        "longitude": ip.longitude,
-                        "asn": ip.asn,
-                        "asn_org": ip.asn_org,
-                        "reputation_score": ip.reputation_score,
-                        "reputation_source": ip.reputation_source,
-                        "category": ip.category,
-                        "category_scores": ip.category_scores or {},
+                        "last_seen": (
+                            row.last_seen.isoformat() if row.last_seen else None
+                        ),
+                        "country_code": row.country_code,
+                        "city": row.city,
+                        "latitude": row.latitude,
+                        "longitude": row.longitude,
+                        "asn": row.asn,
+                        "asn_org": row.asn_org,
+                        "reputation_score": row.reputation_score,
+                        "reputation_source": row.reputation_source,
+                        "category": row.category,
                     }
-                    for ip in ips
+                    for row in rows
                 ],
                 "pagination": {
                     "page": page,
@@ -1634,29 +1646,30 @@ class DatabaseManager:
             )
             unique_attackers = unique_attackers.scalar() or 0
 
-            # --- Indexed queries on access_logs (use boolean indexes) ---
-            suspicious_q = session.query(func.count(AccessLog.id)).filter(
-                AccessLog.is_suspicious == True
-            )
-            suspicious_q = self._public_ip_filter(suspicious_q, AccessLog.ip, server_ip)
-            suspicious_accesses = suspicious_q.scalar() or 0
+            # --- Single scan on access_logs using conditional aggregation ---
+            from sqlalchemy import case
 
-            honeypot_q = session.query(func.count(AccessLog.id)).filter(
-                AccessLog.is_honeypot_trigger == True
+            logs_q = session.query(
+                func.count(case((AccessLog.is_suspicious == True, AccessLog.id))).label(
+                    "suspicious_accesses"
+                ),
+                func.count(
+                    case((AccessLog.is_honeypot_trigger == True, AccessLog.id))
+                ).label("honeypot_triggered"),
+                func.count(
+                    distinct(
+                        case((AccessLog.is_honeypot_trigger == True, AccessLog.ip))
+                    )
+                ).label("honeypot_ips"),
+                func.count(distinct(AccessLog.path)).label("unique_paths"),
             )
-            honeypot_q = self._public_ip_filter(honeypot_q, AccessLog.ip, server_ip)
-            honeypot_triggered = honeypot_q.scalar() or 0
+            logs_q = self._public_ip_filter(logs_q, AccessLog.ip, server_ip)
+            logs_row = logs_q.one()
 
-            hp_ips_q = session.query(func.count(distinct(AccessLog.ip))).filter(
-                AccessLog.is_honeypot_trigger == True
-            )
-            hp_ips_q = self._public_ip_filter(hp_ips_q, AccessLog.ip, server_ip)
-            honeypot_ips = hp_ips_q.scalar() or 0
-
-            # --- Remaining: unique_paths still needs access_logs scan ---
-            paths_q = session.query(func.count(distinct(AccessLog.path)))
-            paths_q = self._public_ip_filter(paths_q, AccessLog.ip, server_ip)
-            unique_paths = paths_q.scalar() or 0
+            suspicious_accesses = logs_row.suspicious_accesses or 0
+            honeypot_triggered = logs_row.honeypot_triggered or 0
+            honeypot_ips = logs_row.honeypot_ips or 0
+            unique_paths = logs_row.unique_paths or 0
 
             return {
                 "total_accesses": int(ip_row.total_accesses or 0),
@@ -2054,7 +2067,10 @@ class DatabaseManager:
 
             offset = (page - 1) * page_size
 
-            base_query = session.query(IpStats)
+            # Only SELECT needed columns instead of full ORM load
+            base_query = session.query(
+                IpStats.ip, IpStats.total_requests, IpStats.category
+            )
             base_query = self._public_ip_filter(base_query, IpStats.ip, server_ip)
 
             # Direct count avoids subquery with all columns

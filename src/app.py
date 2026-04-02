@@ -180,6 +180,9 @@ DASHBOARD AVAILABLE AT
     yield
 
     # Shutdown
+    from generative_ai import close_aiohttp_session
+
+    await close_aiohttp_session()
     app_logger.info("Server shutting down...")
 
 
