@@ -2470,6 +2470,7 @@ class DatabaseManager:
                 # Group by date + hour, portable across SQLite and PostgreSQL
                 # strftime works on SQLite, to_char on PostgreSQL
                 from sqlalchemy import literal_column
+
                 is_sqlite = "sqlite" in str(session.bind.url)
                 if is_sqlite:
                     hour_expr = func.strftime("%Y-%m-%d %H:00", AccessLog.timestamp)
@@ -2494,7 +2495,10 @@ class DatabaseManager:
                 slot_data = {t: {s: 0 for s in slots} for t in top_type_names}
                 for row in hourly_q:
                     slot_str = str(row.slot)
-                    if row.attack_type in slot_data and slot_str in slot_data[row.attack_type]:
+                    if (
+                        row.attack_type in slot_data
+                        and slot_str in slot_data[row.attack_type]
+                    ):
                         slot_data[row.attack_type][slot_str] = row.count
 
                 return {
@@ -2556,7 +2560,7 @@ class DatabaseManager:
                         for t in top_type_names
                     ],
                     "dates": dates,
-            }
+                }
         finally:
             self.close_session()
 
