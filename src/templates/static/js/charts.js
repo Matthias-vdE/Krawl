@@ -259,7 +259,15 @@ async function loadAttackTrendsChart(canvasId) {
         const oldMsg = canvas.parentElement.querySelector('.trends-empty-msg');
         if (oldMsg) oldMsg.style.display = 'none';
 
+        const isHourly = dates.length > 0 && dates[0].includes(':');
         const shortLabels = dates.map(d => {
+            if (isHourly) {
+                // "2026-04-02 14:00" → "Apr 2 14:00"
+                const [datePart, timePart] = d.split(' ');
+                const dt = new Date(datePart + 'T00:00:00');
+                const dayLabel = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                return `${dayLabel} ${timePart}`;
+            }
             const dt = new Date(d + 'T00:00:00');
             return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         });

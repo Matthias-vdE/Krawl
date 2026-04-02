@@ -2414,7 +2414,8 @@ class DatabaseManager:
         self, limit: int = 10, days: int = 30, offset_days: int = 0
     ) -> Dict[str, Any]:
         """
-        Get daily attack type counts for a sliding window (for line chart).
+        Get attack type counts for a sliding window (for line chart).
+        Uses hourly granularity for spans <= 7 days, daily otherwise.
 
         Args:
             limit: Max attack types to return
@@ -2422,7 +2423,7 @@ class DatabaseManager:
             offset_days: How many days back to shift the window end
                          (0 = ending today, 30 = ending 30 days ago, etc.)
 
-        Returns top N attack types with their daily breakdown and totals.
+        Returns top N attack types with their breakdown and totals.
         """
         session = self.session
         try:
@@ -2430,6 +2431,7 @@ class DatabaseManager:
 
             end = datetime.now() - timedelta(days=offset_days)
             cutoff = end - timedelta(days=days)
+            use_hourly = days <= 7
 
             # Time range filter used by both queries
             time_filter = [
@@ -2457,54 +2459,103 @@ class DatabaseManager:
             top_type_names = [row.attack_type for row in top_types_q]
             totals = {row.attack_type: row.total for row in top_types_q}
 
-            # Build list of dates in the period
-            dates = []
-            for i in range(days, -1, -1):
-                d = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-                dates.append(d)
+            if use_hourly:
+                # Hourly granularity: build list of hour slots
+                slots = []
+                total_hours = days * 24
+                for i in range(total_hours, -1, -1):
+                    slot = (end - timedelta(hours=i)).strftime("%Y-%m-%d %H:00")
+                    slots.append(slot)
 
-            # Get daily breakdown for those types using func.date() for portability
-            day_expr = func.date(AccessLog.timestamp)
-            daily_q = (
-                session.query(
-                    AttackDetection.attack_type,
-                    day_expr.label("day"),
-                    func.count(AttackDetection.id).label("count"),
-                )
-                .join(AccessLog, AttackDetection.access_log_id == AccessLog.id)
-                .filter(
-                    *time_filter,
-                    AttackDetection.attack_type.in_(top_type_names),
-                )
-                .group_by(AttackDetection.attack_type, day_expr)
-                .all()
-            )
+                # Group by date + hour, portable across SQLite and PostgreSQL
+                # strftime works on SQLite, to_char on PostgreSQL
+                from sqlalchemy import literal_column
+                is_sqlite = "sqlite" in str(session.bind.url)
+                if is_sqlite:
+                    hour_expr = func.strftime("%Y-%m-%d %H:00", AccessLog.timestamp)
+                else:
+                    hour_expr = func.to_char(AccessLog.timestamp, "YYYY-MM-DD HH24:00")
 
-            # Build daily data per attack type
-            daily_data = {t: {d: 0 for d in dates} for t in top_type_names}
-            for row in daily_q:
-                # row.day may be a date object or string depending on the DB backend
-                day_str = (
-                    row.day.strftime("%Y-%m-%d")
-                    if hasattr(row.day, "strftime")
-                    else str(row.day)
+                hourly_q = (
+                    session.query(
+                        AttackDetection.attack_type,
+                        hour_expr.label("slot"),
+                        func.count(AttackDetection.id).label("count"),
+                    )
+                    .join(AccessLog, AttackDetection.access_log_id == AccessLog.id)
+                    .filter(
+                        *time_filter,
+                        AttackDetection.attack_type.in_(top_type_names),
+                    )
+                    .group_by(AttackDetection.attack_type, hour_expr)
+                    .all()
                 )
-                if (
-                    row.attack_type in daily_data
-                    and day_str in daily_data[row.attack_type]
-                ):
-                    daily_data[row.attack_type][day_str] = row.count
 
-            return {
-                "attack_types": [
-                    {
-                        "type": t,
-                        "total": totals[t],
-                        "daily": [daily_data[t][d] for d in dates],
-                    }
-                    for t in top_type_names
-                ],
-                "dates": dates,
+                slot_data = {t: {s: 0 for s in slots} for t in top_type_names}
+                for row in hourly_q:
+                    slot_str = str(row.slot)
+                    if row.attack_type in slot_data and slot_str in slot_data[row.attack_type]:
+                        slot_data[row.attack_type][slot_str] = row.count
+
+                return {
+                    "attack_types": [
+                        {
+                            "type": t,
+                            "total": totals[t],
+                            "daily": [slot_data[t][s] for s in slots],
+                        }
+                        for t in top_type_names
+                    ],
+                    "dates": slots,
+                }
+            else:
+                # Daily granularity
+                dates = []
+                for i in range(days, -1, -1):
+                    d = (end - timedelta(days=i)).strftime("%Y-%m-%d")
+                    dates.append(d)
+
+                # Get daily breakdown for those types using func.date() for portability
+                day_expr = func.date(AccessLog.timestamp)
+                daily_q = (
+                    session.query(
+                        AttackDetection.attack_type,
+                        day_expr.label("day"),
+                        func.count(AttackDetection.id).label("count"),
+                    )
+                    .join(AccessLog, AttackDetection.access_log_id == AccessLog.id)
+                    .filter(
+                        *time_filter,
+                        AttackDetection.attack_type.in_(top_type_names),
+                    )
+                    .group_by(AttackDetection.attack_type, day_expr)
+                    .all()
+                )
+
+                # Build daily data per attack type
+                daily_data = {t: {d: 0 for d in dates} for t in top_type_names}
+                for row in daily_q:
+                    day_str = (
+                        row.day.strftime("%Y-%m-%d")
+                        if hasattr(row.day, "strftime")
+                        else str(row.day)
+                    )
+                    if (
+                        row.attack_type in daily_data
+                        and day_str in daily_data[row.attack_type]
+                    ):
+                        daily_data[row.attack_type][day_str] = row.count
+
+                return {
+                    "attack_types": [
+                        {
+                            "type": t,
+                            "total": totals[t],
+                            "daily": [daily_data[t][d] for d in dates],
+                        }
+                        for t in top_type_names
+                    ],
+                    "dates": dates,
             }
         finally:
             self.close_session()
