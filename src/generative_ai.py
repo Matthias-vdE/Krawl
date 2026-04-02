@@ -22,6 +22,25 @@ logger = logging.getLogger("krawl")
 # Cache robots.txt disallowed paths
 _robots_disallowed_cache: Optional[List[str]] = None
 
+# Shared aiohttp session to avoid creating a new connection pool per request
+_aiohttp_session: Optional[aiohttp.ClientSession] = None
+
+
+async def _get_aiohttp_session() -> aiohttp.ClientSession:
+    """Get or create a shared aiohttp ClientSession for API calls."""
+    global _aiohttp_session
+    if _aiohttp_session is None or _aiohttp_session.closed:
+        _aiohttp_session = aiohttp.ClientSession()
+    return _aiohttp_session
+
+
+async def close_aiohttp_session() -> None:
+    """Close the shared aiohttp session. Call on app shutdown."""
+    global _aiohttp_session
+    if _aiohttp_session is not None and not _aiohttp_session.closed:
+        await _aiohttp_session.close()
+        _aiohttp_session = None
+
 
 def is_ai_enabled() -> bool:
     """Check if AI generation is enabled via config or environment variable."""
@@ -169,6 +188,36 @@ def load_robots_disallowed() -> List[str]:
     return []
 
 
+def has_generated_page_in_db(path: str) -> bool:
+    """Check if a generated page exists in the database without loading content.
+
+    Args:
+        path: Request path
+
+    Returns:
+        True if a cached page exists for this path
+    """
+    try:
+        from database import DatabaseManager
+        from models import GeneratedPage
+
+        db = DatabaseManager()
+        session = db.session
+        try:
+            exists = (
+                session.query(GeneratedPage.path)
+                .filter(GeneratedPage.path == path)
+                .first()
+                is not None
+            )
+            return exists
+        finally:
+            db.close_session()
+    except Exception as err:
+        logger.warning(f"Failed to check generated page in DB for {path}: {err}")
+        return False
+
+
 def get_generated_page_from_db(path: str) -> Optional[str]:
     """Retrieve a cached generated page from database.
 
@@ -185,22 +234,27 @@ def get_generated_page_from_db(path: str) -> Optional[str]:
         db = DatabaseManager()
         session = db.session
 
-        page = session.query(GeneratedPage).filter(GeneratedPage.path == path).first()
-
-        if page:
-            # Update last_accessed and increment access count
-            page.last_accessed = datetime.utcnow()
-            page.access_count = (page.access_count or 0) + 1
-            session.commit()
-
-            # Decode base64 HTML content
-            html_content = base64.b64decode(page.html_content_b64).decode("utf-8")
-            logger.debug(
-                f"Retrieved generated page from DB for path: {path} (accesses: {page.access_count})"
+        try:
+            page = (
+                session.query(GeneratedPage).filter(GeneratedPage.path == path).first()
             )
-            return html_content
 
-        return None
+            if page:
+                # Update last_accessed and increment access count
+                page.last_accessed = datetime.utcnow()
+                page.access_count = (page.access_count or 0) + 1
+                session.commit()
+
+                # Decode base64 HTML content
+                html_content = base64.b64decode(page.html_content_b64).decode("utf-8")
+                logger.debug(
+                    f"Retrieved generated page from DB for path: {path} (accesses: {page.access_count})"
+                )
+                return html_content
+
+            return None
+        finally:
+            db.close_session()
     except Exception as err:
         logger.warning(f"Failed to retrieve generated page from DB for {path}: {err}")
         return None
@@ -223,33 +277,38 @@ def save_generated_page_to_db(path: str, html_content: str) -> bool:
         db = DatabaseManager()
         session = db.session
 
-        # Encode HTML content to base64
-        html_b64 = base64.b64encode(html_content.encode("utf-8")).decode("utf-8")
+        try:
+            # Encode HTML content to base64
+            html_b64 = base64.b64encode(html_content.encode("utf-8")).decode("utf-8")
 
-        # Check if path already exists (upsert)
-        existing_page = (
-            session.query(GeneratedPage).filter(GeneratedPage.path == path).first()
-        )
-
-        if existing_page:
-            # Update existing entry
-            existing_page.html_content_b64 = html_b64
-            existing_page.last_accessed = datetime.utcnow()
-            logger.debug(f"Updated generated page in DB for path: {path}")
-        else:
-            # Create new entry
-            new_page = GeneratedPage(
-                path=path,
-                html_content_b64=html_b64,
-                created_at=datetime.utcnow(),
-                last_accessed=datetime.utcnow(),
-                access_count=0,
+            # Check if path already exists (upsert)
+            existing_page = (
+                session.query(GeneratedPage)
+                .filter(GeneratedPage.path == path)
+                .first()
             )
-            session.add(new_page)
-            logger.debug(f"Saved new generated page to DB for path: {path}")
 
-        session.commit()
-        return True
+            if existing_page:
+                # Update existing entry
+                existing_page.html_content_b64 = html_b64
+                existing_page.last_accessed = datetime.utcnow()
+                logger.debug(f"Updated generated page in DB for path: {path}")
+            else:
+                # Create new entry
+                new_page = GeneratedPage(
+                    path=path,
+                    html_content_b64=html_b64,
+                    created_at=datetime.utcnow(),
+                    last_accessed=datetime.utcnow(),
+                    access_count=0,
+                )
+                session.add(new_page)
+                logger.debug(f"Saved new generated page to DB for path: {path}")
+
+            session.commit()
+            return True
+        finally:
+            db.close_session()
     except Exception as err:
         logger.error(f"Failed to save generated page to DB for {path}: {err}")
         return False
@@ -380,18 +439,19 @@ async def _call_api(
     timeout_obj = aiohttp.ClientTimeout(total=timeout)
 
     try:
-        async with aiohttp.ClientSession(timeout=timeout_obj) as session:
-            async with session.post(
-                url,
-                json=payload,
-                headers=headers,
-            ) as response:
-                if response.status != 200:
-                    error_body = await response.text()
-                    raise RuntimeError(
-                        f"{provider} HTTP {response.status}: {error_body}"
-                    )
-                body = await response.json()
+        session = await _get_aiohttp_session()
+        async with session.post(
+            url,
+            json=payload,
+            headers=headers,
+            timeout=timeout_obj,
+        ) as response:
+            if response.status != 200:
+                error_body = await response.text()
+                raise RuntimeError(
+                    f"{provider} HTTP {response.status}: {error_body}"
+                )
+            body = await response.json()
     except aiohttp.ClientError as err:
         raise RuntimeError(f"{provider} network error: {err}") from err
     except asyncio.TimeoutError as err:
@@ -548,9 +608,8 @@ def should_use_ai_for_path(path: str) -> bool:
     Returns:
         True if path should try to use AI (for generation or cached retrieval)
     """
-    # Check if there's a cached page even if AI is disabled
-    cached_page = get_generated_page_from_db(path)
-    if cached_page:
+    # Check if there's a cached page even if AI is disabled (lightweight check, no content load)
+    if has_generated_page_in_db(path):
         logger.debug(f"Found cached AI page for {path}, will serve it")
         return True
 
