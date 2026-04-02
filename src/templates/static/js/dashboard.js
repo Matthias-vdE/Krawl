@@ -190,11 +190,10 @@ document.addEventListener('alpine:init', () => {
                     if (typeof loadAttackTrendsChart === 'function') {
                         loadAttackTrendsChart();
                     }
-                    // Process HTMX attributes on newly inserted elements
-                    const attacksTab = document.querySelector('template[x-if="tab === \'attacks\'"]');
-                    if (attacksTab && attacksTab.nextElementSibling) {
-                        htmx.process(attacksTab.nextElementSibling);
-                    }
+                    // Process all HTMX containers in the attacks tab
+                    document.querySelectorAll('.alert-section .htmx-container[hx-get]').forEach(el => {
+                        htmx.process(el);
+                    });
                 }, 200);
             });
         },
