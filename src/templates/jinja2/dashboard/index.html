@@ -133,8 +133,9 @@
         </div>
     </div>
 
-    {# ==================== ATTACKS TAB ==================== #}
-    <div x-show="tab === 'attacks'" x-cloak>
+    {# ==================== ATTACKS TAB (lazy-rendered on navigation) ==================== #}
+    <template x-if="tab === 'attacks'">
+    <div>
 
         {# Attack Trends line chart with period navigation and totals sidebar #}
         <div class="table-container alert-section">
@@ -200,6 +201,7 @@
             </div>
         </div>
     </div>
+    </template>
 
     {# ==================== IP INSIGHT TAB ==================== #}
     <div x-show="tab === 'ip-insight'" x-cloak>

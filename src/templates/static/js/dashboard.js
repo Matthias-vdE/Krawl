@@ -184,11 +184,16 @@ document.addEventListener('alpine:init', () => {
             this.tab = 'attacks';
             window.location.hash = '#attacks';
 
-            // Delay chart initialization to ensure the container is visible
+            // x-if inserts new DOM — HTMX must process it for hx-trigger to work
             this.$nextTick(() => {
                 setTimeout(() => {
                     if (typeof loadAttackTrendsChart === 'function') {
                         loadAttackTrendsChart();
+                    }
+                    // Process HTMX attributes on newly inserted elements
+                    const attacksTab = document.querySelector('template[x-if="tab === \'attacks\'"]');
+                    if (attacksTab && attacksTab.nextElementSibling) {
+                        htmx.process(attacksTab.nextElementSibling);
                     }
                 }, 200);
             });

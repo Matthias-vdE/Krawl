@@ -2215,3 +2215,13 @@ tbody {
     color: #4a515a;
     padding: 20px 12px;
 }
+
+/* Map marker pop-in animation for batch loading */
+@keyframes marker-pop {
+    0%   { transform: scale(0); opacity: 0; }
+    60%  { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+}
+.marker-pop-in {
+    animation: marker-pop 0.4s ease-out forwards;
+}

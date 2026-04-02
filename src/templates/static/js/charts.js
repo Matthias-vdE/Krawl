@@ -235,10 +235,29 @@ async function loadAttackTrendsChart(canvasId) {
         // Update totals sidebar
         _updateTrendsTotals(attackTypes);
 
+        if (attackTrendsChart) {
+            attackTrendsChart.destroy();
+            attackTrendsChart = null;
+        }
+
         if (attackTypes.length === 0) {
-            canvas.parentElement.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:13px;">No attack data for this period</div>';
+            canvas.style.display = 'none';
+            let emptyMsg = canvas.parentElement.querySelector('.trends-empty-msg');
+            if (!emptyMsg) {
+                emptyMsg = document.createElement('div');
+                emptyMsg.className = 'trends-empty-msg';
+                emptyMsg.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:13px;';
+                canvas.parentElement.appendChild(emptyMsg);
+            }
+            emptyMsg.textContent = 'No attack data for this period';
+            emptyMsg.style.display = 'flex';
             return;
         }
+
+        // Restore canvas if previously hidden
+        canvas.style.display = '';
+        const oldMsg = canvas.parentElement.querySelector('.trends-empty-msg');
+        if (oldMsg) oldMsg.style.display = 'none';
 
         const shortLabels = dates.map(d => {
             const dt = new Date(d + 'T00:00:00');
@@ -260,10 +279,6 @@ async function loadAttackTrendsChart(canvasId) {
             _attackType: at.type,
         }));
 
-        if (attackTrendsChart) {
-            attackTrendsChart.destroy();
-        }
-
         const ctx = canvas.getContext('2d');
         attackTrendsChart = new Chart(ctx, {
             type: 'line',
@@ -273,24 +288,7 @@ async function loadAttackTrendsChart(canvasId) {
                 maintainAspectRatio: false,
                 interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            color: '#c9d1d9',
-                            font: { size: 11, weight: '500', family: "'Segoe UI', Tahoma, Geneva, Verdana" },
-                            padding: 12,
-                            usePointStyle: true,
-                            pointStyle: 'line',
-                        },
-                        onClick: function(_, legendItem, legend) {
-                            const index = legendItem.datasetIndex;
-                            const ci = legend.chart;
-                            const meta = ci.getDatasetMeta(index);
-                            meta.hidden = meta.hidden === null ? !ci.data.datasets[index].hidden : null;
-                            ci.update();
-                            filterAttackTableByType(ci.data.datasets[index]._attackType);
-                        }
-                    },
+                    legend: { display: false },
                     tooltip: {
                         enabled: true,
                         backgroundColor: 'rgba(22, 27, 34, 0.95)',
@@ -330,16 +328,28 @@ async function loadAttackTrendsChart(canvasId) {
 
 function _updateTrendsPeriodLabel(dates) {
     const label = document.getElementById('trends-period-label');
-    if (!label || dates.length === 0) return;
+
+    // Always update button states regardless of data
+    const nextBtn = document.getElementById('trends-next');
+    if (nextBtn) nextBtn.disabled = (_trendsOffsetDays <= 0);
+
+    if (!label) return;
+
+    if (dates.length === 0) {
+        // Show computed date range even when no data exists
+        const end = new Date();
+        end.setDate(end.getDate() - _trendsOffsetDays);
+        const start = new Date(end);
+        start.setDate(start.getDate() - _trendsDays);
+        const fmt = { month: 'short', day: 'numeric' };
+        label.textContent = `${start.toLocaleDateString('en-US', fmt)} — ${end.toLocaleDateString('en-US', fmt)}`;
+        return;
+    }
 
     const start = new Date(dates[0] + 'T00:00:00');
     const end = new Date(dates[dates.length - 1] + 'T00:00:00');
     const fmt = { month: 'short', day: 'numeric' };
     label.textContent = `${start.toLocaleDateString('en-US', fmt)} — ${end.toLocaleDateString('en-US', fmt)}`;
-
-    // Disable "next" if we're at the current period
-    const nextBtn = document.getElementById('trends-next');
-    if (nextBtn) nextBtn.disabled = (_trendsOffsetDays <= 0);
 }
 
 function _updateTrendsTotals(attackTypes) {
