@@ -120,6 +120,7 @@ document.addEventListener('alpine:init', () => {
         // Auth state (UI only — actual security enforced server-side via cookie)
         authenticated: false,
         authModal: { show: false, password: '', error: '', loading: false },
+        uploadModal: { show: false, path: '', fileName: '', fileContent: '', error: '', success: '', loading: false, dragging: false },
 
         // Flag to prevent double-triggering during init
         _initializingHash: false,
@@ -611,6 +612,98 @@ window.downloadSelectedPages = function() {
         const path = cb.value;
         window.open(dashboardPath + '/api/download-generated-page?path=' + encodeURIComponent(path), '_blank');
     });
+};
+
+// Upload page modal handlers
+const _allowedUploadExts = ['.html', '.htm', '.xml', '.json', '.txt', '.css', '.js'];
+
+function _getAlpineData() {
+    const el = document.querySelector('[x-data="dashboardApp()"]');
+    return el && el._x_dataStack ? el._x_dataStack[0] : null;
+}
+
+window.openUploadModal = function() {
+    const app = _getAlpineData();
+    if (!app) return;
+    Object.assign(app.uploadModal, { show: true, path: '', fileName: '', fileContent: '', error: '', success: '', loading: false, dragging: false });
+};
+
+window.handleUploadFile = function(event) {
+    const file = event.target.files[0];
+    if (file) _processUploadFile(file);
+};
+
+window.handleUploadDrop = function(event) {
+    const file = event.dataTransfer.files[0];
+    if (file) _processUploadFile(file);
+};
+
+function _processUploadFile(file) {
+    const app = _getAlpineData();
+    if (!app) return;
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (!_allowedUploadExts.includes(ext)) {
+        app.uploadModal.error = 'Unsupported file type. Use: ' + _allowedUploadExts.join(', ');
+        app.uploadModal.fileName = '';
+        app.uploadModal.fileContent = '';
+        return;
+    }
+    app.uploadModal.error = '';
+    app.uploadModal.fileName = file.name;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        app.uploadModal.fileContent = e.target.result;
+        // Auto-fill path from filename if empty
+        if (!app.uploadModal.path) {
+            app.uploadModal.path = file.name;
+        }
+    };
+    reader.readAsText(file);
+}
+
+window.submitUploadPage = async function() {
+    const app = _getAlpineData();
+    if (!app) return;
+    const modal = app.uploadModal;
+    modal.error = '';
+    modal.success = '';
+
+    let path = modal.path.trim();
+    if (!path) { modal.error = 'Please enter a path'; return; }
+    if (!modal.fileContent) { modal.error = 'Please select a file'; return; }
+
+    // Ensure path starts with /
+    if (!path.startsWith('/')) path = '/' + path;
+
+    modal.loading = true;
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+
+    try {
+        const resp = await fetch(dashboardPath + '/api/upload-generated-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ path: path, content: modal.fileContent }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            modal.success = 'Page uploaded to ' + path;
+            modal.error = '';
+            // Reset form after short delay
+            setTimeout(() => {
+                modal.show = false;
+                if (typeof window.reloadGeneratedPagesTable === 'function') {
+                    window.reloadGeneratedPagesTable();
+                }
+            }, 1200);
+        } else {
+            modal.error = data.error || 'Upload failed';
+        }
+    } catch (err) {
+        modal.error = 'Request failed: ' + err.message;
+    }
+    modal.loading = false;
 };
 
 // Escape HTML to prevent XSS when inserting into innerHTML
