@@ -2279,3 +2279,33 @@ tbody {
     border-color: #58a6ff;
     font-weight: 600;
 }
+
+/* Deception panel action buttons */
+.deception-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    background: transparent;
+    color: #8b949e;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    font-size: 0.78em;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.deception-action-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #c9d1d9;
+    border-color: #484f58;
+}
+.deception-action-btn-danger {
+    color: #f85149;
+    border-color: #f8514966;
+}
+.deception-action-btn-danger:hover {
+    background: rgba(248, 81, 73, 0.1);
+    color: #f85149;
+    border-color: #f85149;
+}

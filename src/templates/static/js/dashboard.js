@@ -545,6 +545,27 @@ window.selectAllPages = function() {
     });
 };
 
+window.downloadGeneratedPage = function(path) {
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    window.open(dashboardPath + '/api/download-generated-page?path=' + encodeURIComponent(path), '_blank');
+};
+
+window.deleteGeneratedPage = async function(path) {
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    const confirmed = await krawlModal.confirm('Delete this generated page? This cannot be undone.');
+    if (!confirmed) return;
+    fetch(dashboardPath + '/api/delete-generated-pages?ids=' + encodeURIComponent(path), { method: 'POST' })
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('deception-htmx-container').innerHTML = html;
+            setTimeout(window.reloadGeneratedPagesTable, 100);
+        })
+        .catch(error => {
+            console.error('Delete error:', error);
+            krawlModal.error('Error deleting page');
+        });
+};
+
 // Escape HTML to prevent XSS when inserting into innerHTML
 function escapeHtml(str) {
     const div = document.createElement('div');

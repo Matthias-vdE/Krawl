@@ -679,3 +679,41 @@ async def delete_generated_pages(
             content={"error": "Internal server error"},
             status_code=500,
         )
+
+
+@router.get("/api/download-generated-page")
+async def download_generated_page(
+    request: Request,
+    path: str = Query(...),
+):
+    """Download a generated deception page as an HTML file."""
+    if not verify_auth(request):
+        return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+
+    import base64
+    from models import GeneratedPage
+
+    db = get_db()
+    try:
+        session = db.session
+        page = session.query(GeneratedPage).filter(GeneratedPage.path == path).first()
+        if not page:
+            return JSONResponse(content={"error": "Page not found"}, status_code=404)
+
+        html_content = base64.b64decode(page.html_content_b64).decode("utf-8")
+        # Build a safe filename from the path
+        safe_name = path.strip("/").replace("/", "_") or "index"
+        safe_name = safe_name[:100] + ".html"
+
+        return Response(
+            content=html_content,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_name}"',
+            },
+        )
+    except Exception as e:
+        get_app_logger().error(f"[DECEPTION] Download error: {e}")
+        return JSONResponse(content={"error": "Internal server error"}, status_code=500)
+    finally:
+        db.close_session()
