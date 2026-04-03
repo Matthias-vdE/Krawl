@@ -574,10 +574,17 @@ window.toggleDeceptionBtnState = function() {
         beforeBtn.classList.toggle('deception-action-btn-danger', !!(dateInput && dateInput.value));
     }
 
+    const checked = document.querySelectorAll('#deception-htmx-container input[name="page-checkbox"]:checked');
+    const hasSelection = checked.length > 0;
+
     const selectedBtn = document.getElementById('btn-delete-selected');
     if (selectedBtn) {
-        const checked = document.querySelectorAll('#deception-htmx-container input[name="page-checkbox"]:checked');
-        selectedBtn.classList.toggle('deception-action-btn-danger', checked.length > 0);
+        selectedBtn.classList.toggle('deception-action-btn-danger', hasSelection);
+    }
+
+    const downloadBtn = document.getElementById('btn-download-selected');
+    if (downloadBtn) {
+        downloadBtn.classList.toggle('deception-action-btn-active', hasSelection);
     }
 };
 
@@ -587,6 +594,24 @@ document.addEventListener('change', function(e) {
         toggleDeceptionBtnState();
     }
 });
+
+window.downloadSelectedPages = function() {
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    const container = document.getElementById('deception-htmx-container');
+    if (!container) return;
+
+    const checkboxes = container.querySelectorAll('input[name="page-checkbox"]:checked');
+    if (checkboxes.length === 0) {
+        krawlModal.error('Please select at least one page to download');
+        return;
+    }
+
+    // Download each selected page
+    checkboxes.forEach(cb => {
+        const path = cb.value;
+        window.open(dashboardPath + '/api/download-generated-page?path=' + encodeURIComponent(path), '_blank');
+    });
+};
 
 // Escape HTML to prevent XSS when inserting into innerHTML
 function escapeHtml(str) {

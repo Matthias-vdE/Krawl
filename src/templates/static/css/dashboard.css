@@ -2309,3 +2309,12 @@ tbody {
     color: #f85149;
     border-color: #f85149;
 }
+.deception-action-btn-active {
+    color: #58a6ff;
+    border-color: #58a6ff66;
+}
+.deception-action-btn-active:hover {
+    background: rgba(88, 166, 255, 0.1);
+    color: #58a6ff;
+    border-color: #58a6ff;
+}
