@@ -58,6 +58,10 @@ class Config:
     user_agents_used_threshold: float = None
     attack_urls_threshold: float = None
 
+    # Tarpit settings - opt-in feature to slow down and confuse AI crawlers
+    tarpit_enabled: bool = False
+    tarpit_delay_seconds: int = 5
+
     log_level: str = "INFO"
 
     _server_ip: Optional[str] = None
@@ -167,6 +171,7 @@ class Config:
         behavior = data.get("behavior", {})
         analyzer = data.get("analyzer") or {}
         crawl = data.get("crawl", {})
+        tarpit = data.get("tarpit", {})
         logging_cfg = data.get("logging", {})
 
         # Handle dashboard_secret_path - auto-generate if null/not set
@@ -231,6 +236,8 @@ class Config:
             ),
             max_pages_limit=crawl.get("max_pages_limit", 250),
             ban_duration_seconds=crawl.get("ban_duration_seconds", 600),
+            tarpit_enabled=tarpit.get("enabled", False),
+            tarpit_delay_seconds=tarpit.get("delay_seconds", 5),
             log_level=os.getenv(
                 "KRAWL_LOG_LEVEL", logging_cfg.get("level", "INFO")
             ).upper(),

@@ -60,3 +60,7 @@ crawl:
   infinite_pages_for_malicious: true
   max_pages_limit: 250
   ban_duration_seconds: 600
+
+tarpit:
+  enabled: false  # Opt-in: trap AI agents with slow responses and random text
+  delay_seconds: 5  # Extra delay (seconds) added to each response when tarpit is active

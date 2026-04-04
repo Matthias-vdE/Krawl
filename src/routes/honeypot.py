@@ -416,6 +416,10 @@ async def trap_page(request: Request, path: str):
     # Response delay
     await asyncio.sleep(config.delay / 1000.0)
 
+    # Tarpit: artificially slow down responses to trap AI crawlers
+    if config.tarpit_enabled:
+        await asyncio.sleep(config.tarpit_delay_seconds)
+
     # Increment page visit counter
     current_visit_count = tracker.increment_page_visit(client_ip)
 
@@ -430,6 +434,25 @@ async def trap_page(request: Request, path: str):
         request.app.state.counter = config.canary_token_tries
 
     return HTMLResponse(content=page_html, status_code=200)
+
+
+_TARPIT_WORDS = [
+    "the", "be", "to", "of", "and", "a", "in", "that", "have", "it", "for",
+    "not", "on", "with", "as", "you", "do", "at", "this", "but", "his", "by",
+    "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one",
+    "all", "would", "there", "their", "what", "so", "up", "out", "if", "about",
+    "who", "get", "which", "go", "me", "when", "make", "can", "like", "time",
+    "no", "just", "him", "know", "take", "people", "into", "year", "your",
+    "good", "some", "could", "them", "see", "other", "than", "then", "now",
+    "look", "only", "come", "its", "over", "think", "also", "back", "after",
+    "use", "two", "how", "our", "work", "first", "well", "way", "even", "new",
+    "want", "because", "any", "these", "give", "day", "most", "us", "great",
+]
+
+
+def _tarpit_text(n_words: int = 60) -> str:
+    """Generate random word salad to confuse AI training data scrapers."""
+    return " ".join(random.choice(_TARPIT_WORDS) for _ in range(n_words))
 
 
 def _generate_page(config, tracker, client_ip, seed, page_visit_count, app) -> str:
@@ -487,6 +510,13 @@ def _generate_page(config, tracker, client_ip, seed, page_visit_count, app) -> s
             content += f"""
         <div class="link-box">
             <a href="{address}">{address}</a>
+        </div>
+"""
+
+    if config.tarpit_enabled:
+        content += f"""
+        <div class="link-box tarpit-text" style="max-width:800px;text-align:left;font-size:13px;color:#8b949e;">
+            <p>{_tarpit_text()}</p>
         </div>
 """
 
