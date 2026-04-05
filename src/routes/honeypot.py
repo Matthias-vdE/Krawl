@@ -476,12 +476,15 @@ async def trap_page(request: Request, path: str):
     if config.tarpit_enabled:
         await asyncio.sleep(config.tarpit_delay_seconds)
 
-    # Increment page visit counter
-    current_visit_count = tracker.increment_page_visit(client_ip)
-
-    # Generate page
-    page_html = _generate_page(
-        config, tracker, client_ip, full_path, current_visit_count, request.app
+    # Generate page (sync function with DB calls, run in thread)
+    page_html = await asyncio.to_thread(
+        _generate_page,
+        config,
+        tracker,
+        client_ip,
+        full_path,
+        current_visit_count,
+        request.app,
     )
 
     # Decrement canary counter
