@@ -17,10 +17,13 @@
             </button>
             <div class="banlist-dropdown-menu" :class="{ 'show': banlistOpen }">
                 <a :href="dashboardPath + '/api/get_banlist?fwtype=raw'" download>
-                    <span class="banlist-icon">📄</span> Raw IPs List
+                    <span class="banlist-icon">📄</span> RAW IPs List
                 </a>
                 <a :href="dashboardPath + '/api/get_banlist?fwtype=iptables'" download>
                     <span class="banlist-icon">🔥</span> IPTables Rules
+                </a>
+                <a :href="dashboardPath + '/api/get_banlist?fwtype=nftables'" download>
+                    <span class="banlist-icon">🔥</span> NFTables Rules
                 </a>
             </div>
         </div>
@@ -61,6 +64,7 @@
         </a>
         <a class="tab-button tab-right" :class="{ active: tab === 'tracked-ips' }" x-show="authenticated" x-cloak @click.prevent="switchToTrackedIps()" href="#tracked-ips">Tracked IPs</a>
         <a class="tab-button" :class="{ active: tab === 'banlist' }" x-show="authenticated" x-cloak @click.prevent="switchToBanlist()" href="#banlist">IP Banlist</a>
+        <a class="tab-button" :class="{ active: tab === 'deception' }" x-show="authenticated" x-cloak @click.prevent="switchToDeception()" href="#deception">Deception</a>
         {# Lock icon (not authenticated) #}
         <a class="tab-button tab-lock-btn" :class="{ 'tab-right': !authenticated }" @click.prevent="promptAuth()" x-show="!authenticated" href="#" title="Unlock protected panels">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
@@ -116,10 +120,60 @@
                 <div class="htmx-indicator">Loading...</div>
             </div>
         </div>
+
+        {# Generated Deception Templates - HTMX loaded #}
+        <div class="table-container">
+            <h2>Generated Deception Templates</h2>
+            <div class="htmx-container"
+                 hx-get="{{ dashboard_path }}/htmx/generated-pages/readonly?page=1"
+                 hx-trigger="load"
+                 hx-swap="innerHTML">
+                <div class="htmx-indicator">Loading...</div>
+            </div>
+        </div>
     </div>
 
-    {# ==================== ATTACKS TAB ==================== #}
-    <div x-show="tab === 'attacks'" x-cloak>
+    {# ==================== ATTACKS TAB (lazy-rendered on navigation) ==================== #}
+    <template x-if="tab === 'attacks'">
+    <div>
+
+        {# Attack Trends line chart with period navigation and totals sidebar #}
+        <div class="table-container alert-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <h2 style="margin: 0;">Attack Trends <span style="color: #8b949e; font-size: 0.7em; font-weight: 400;">(click legend to filter table)</span></h2>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="display: flex; gap: 4px;" id="trends-span-selector">
+                        <button class="map-limit-btn" data-days="1" onclick="setTrendsSpan(1, this)">1D</button>
+                        <button class="map-limit-btn active" data-days="7" onclick="setTrendsSpan(7, this)">7D</button>
+                        <button class="map-limit-btn" data-days="30" onclick="setTrendsSpan(30, this)">30D</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button id="trends-prev" onclick="shiftTrendsPeriod(-1)" class="pagination-btn" style="padding: 4px 10px; font-size: 0.85em;">&#8592;</button>
+                        <span id="trends-period-label" style="color: #c9d1d9; font-size: 0.85em; min-width: 160px; text-align: center;">Last 30 days</span>
+                        <button id="trends-next" onclick="shiftTrendsPeriod(1)" class="pagination-btn" style="padding: 4px 10px; font-size: 0.85em;" disabled>&#8594;</button>
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 16px;">
+                <div class="chart-wrapper" style="height: 300px; flex: 1; min-width: 0;">
+                    <canvas id="attack-trends-chart"></canvas>
+                </div>
+                <div id="trends-totals" style="min-width: 180px; max-width: 220px; display: flex; flex-direction: column; gap: 6px; padding-top: 4px; overflow-y: auto; max-height: 300px;">
+                    <span style="color: #8b949e; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Totals (period)</span>
+                </div>
+            </div>
+        </div>
+
+        {# Attack Types table #}
+        <div class="table-container alert-section">
+            <h2>Detected Attack Types</h2>
+            <div id="attacks-htmx-container" class="htmx-container"
+                 hx-get="{{ dashboard_path }}/htmx/attacks?page=1"
+                 hx-trigger="revealed"
+                 hx-swap="innerHTML">
+                <div class="htmx-indicator">Loading...</div>
+            </div>
+        </div>
 
         {# Attackers table - HTMX loaded #}
         <div class="table-container alert-section">
@@ -153,37 +207,8 @@
                 <div class="htmx-indicator">Loading...</div>
             </div>
         </div>
-
-        {# Attack Types table #}
-        <div class="table-container alert-section">
-            <h2>Detected Attack Types</h2>
-            <div class="htmx-container"
-                 hx-get="{{ dashboard_path }}/htmx/attacks?page=1"
-                 hx-trigger="revealed"
-                 hx-swap="innerHTML">
-                <div class="htmx-indicator">Loading...</div>
-            </div>
-        </div>
-
-        {# Charts + Patterns side by side #}
-        <div class="charts-container">
-            <div class="table-container chart-section">
-                <h2>Most Recurring Attack Types</h2>
-                <div class="chart-wrapper">
-                    <canvas id="attack-types-chart"></canvas>
-                </div>
-            </div>
-            <div class="table-container chart-section">
-                <h2>Most Recurring Attack Patterns</h2>
-                <div class="htmx-container"
-                     hx-get="{{ dashboard_path }}/htmx/patterns?page=1"
-                     hx-trigger="revealed"
-                     hx-swap="innerHTML">
-                    <div class="htmx-indicator">Loading...</div>
-                </div>
-            </div>
-        </div>
     </div>
+    </template>
 
     {# ==================== IP INSIGHT TAB ==================== #}
     <div x-show="tab === 'ip-insight'" x-cloak>
@@ -208,11 +233,19 @@
         <div id="banlist-htmx-container"></div>
     </div>
 
+    {# ==================== DECEPTION TAB (protected, Generated templates) ==================== #}
+    <div x-show="tab === 'deception'" x-cloak>
+        <div id="deception-htmx-container"></div>
+    </div>
+
     {# Raw request modal - Alpine.js #}
     {% include "dashboard/partials/raw_request_modal.html" %}
 
     {# Auth modal - Alpine.js #}
     {% include "dashboard/partials/auth_modal.html" %}
+
+    {# Upload page modal - Alpine.js #}
+    {% include "dashboard/partials/upload_page_modal.html" %}
 
 </div>
 {% endblock %}

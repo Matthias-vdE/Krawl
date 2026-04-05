@@ -6,6 +6,7 @@ Migrated from handler.py dashboard API endpoints.
 All endpoints are prefixed with the secret dashboard path.
 """
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -18,7 +19,14 @@ from pydantic import BaseModel
 
 from dependencies import get_db, get_client_ip
 from logger import get_app_logger
-from dashboard_cache import get_cached, is_warm
+from config import get_config
+from dashboard_cache import (
+    get_cached,
+    is_warm,
+    invalidate_table_cache,
+    get_cached_table,
+    set_cached_table,
+)
 
 # Server-side session token store (valid tokens for authenticated sessions)
 _auth_tokens: set = set()
@@ -162,12 +170,15 @@ async def ban_override(request: Request, body: BanOverrideRequest):
         )
 
     if body.action == "ban":
-        success = db.force_ban_ip(body.ip)
+        success = await asyncio.to_thread(db.force_ban_ip, body.ip)
     else:
-        success = db.set_ban_override(body.ip, action_map[body.action])
+        success = await asyncio.to_thread(
+            db.set_ban_override, body.ip, action_map[body.action]
+        )
 
     if success:
         get_app_logger().info(f"Ban override: {body.action} on IP {body.ip}")
+        invalidate_table_cache()
         return JSONResponse(
             content={"success": True, "ip": body.ip, "action": body.action}
         )
@@ -189,9 +200,9 @@ async def track_ip(request: Request, body: TrackIpRequest):
 
     db = get_db()
     if body.action == "track":
-        success = db.track_ip(body.ip)
+        success = await asyncio.to_thread(db.track_ip, body.ip)
     elif body.action == "untrack":
-        success = db.untrack_ip(body.ip)
+        success = await asyncio.to_thread(db.untrack_ip, body.ip)
     else:
         return JSONResponse(
             content={"error": "Invalid action. Use: track, untrack"},
@@ -200,6 +211,7 @@ async def track_ip(request: Request, body: TrackIpRequest):
 
     if success:
         get_app_logger().info(f"IP tracking: {body.action} on IP {body.ip}")
+        invalidate_table_cache()
         return JSONResponse(
             content={"success": True, "ip": body.ip, "action": body.action}
         )
@@ -208,11 +220,17 @@ async def track_ip(request: Request, body: TrackIpRequest):
 
 @router.get("/api/all-ip-stats")
 async def all_ip_stats(request: Request):
+    cached = get_cached_table("api:all_ip_stats")
+    if cached:
+        return JSONResponse(content=cached, headers=_no_cache_headers())
+
     db = get_db()
     try:
-        ip_stats_list = db.get_ip_stats(limit=500)
+        ip_stats_list = await asyncio.to_thread(db.get_ip_stats, limit=500)
+        result = {"ips": ip_stats_list}
+        set_cached_table("api:all_ip_stats", result)
         return JSONResponse(
-            content={"ips": ip_stats_list},
+            content=result,
             headers=_no_cache_headers(),
         )
     except Exception as e:
@@ -233,8 +251,12 @@ async def attackers(
     page_size = min(max(1, page_size), 100)
 
     try:
-        result = db.get_attackers_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_attackers_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -255,7 +277,8 @@ async def all_ips(
 
     # Serve from cache on default map request (top 100 IPs)
     if (
-        page == 1
+        get_config().dashboard_cache_warmup
+        and page == 1
         and page_size == 100
         and sort_by == "total_requests"
         and sort_order == "desc"
@@ -267,8 +290,12 @@ async def all_ips(
 
     db = get_db()
     try:
-        result = db.get_all_ips_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_all_ips_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -280,7 +307,7 @@ async def all_ips(
 async def ip_stats(ip_address: str, request: Request):
     db = get_db()
     try:
-        stats = db.get_ip_stats_by_ip(ip_address)
+        stats = await asyncio.to_thread(db.get_ip_stats_by_ip, ip_address)
         if stats:
             return JSONResponse(content=stats, headers=_no_cache_headers())
         else:
@@ -305,8 +332,12 @@ async def honeypot(
     page_size = min(max(1, page_size), 100)
 
     try:
-        result = db.get_honeypot_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_honeypot_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -327,8 +358,12 @@ async def credentials(
     page_size = min(max(1, page_size), 100)
 
     try:
-        result = db.get_credentials_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_credentials_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -349,8 +384,12 @@ async def top_ips(
     page_size = min(max(1, page_size), 100)
 
     try:
-        result = db.get_top_ips_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_ips_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -371,8 +410,12 @@ async def top_paths(
     page_size = min(max(1, page_size), 100)
 
     try:
-        result = db.get_top_paths_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_paths_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -393,8 +436,12 @@ async def top_user_agents(
     page_size = min(max(1, page_size), 100)
 
     try:
-        result = db.get_top_user_agents_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_user_agents_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -408,14 +455,50 @@ async def attack_types_stats(
     limit: int = Query(20),
     ip_filter: str = Query(None),
 ):
-    db = get_db()
     limit = min(max(1, limit), 100)
 
+    cache_key = f"api:attack_stats:{limit}:{ip_filter or ''}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        return JSONResponse(content=cached, headers=_no_cache_headers())
+
+    db = get_db()
     try:
-        result = db.get_attack_types_stats(limit=limit, ip_filter=ip_filter)
+        result = await asyncio.to_thread(
+            db.get_attack_types_stats, limit=limit, ip_filter=ip_filter
+        )
+        set_cached_table(cache_key, result)
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
         get_app_logger().error(f"Error fetching attack types stats: {e}")
+        return JSONResponse(content={"error": str(e)}, headers=_no_cache_headers())
+
+
+@router.get("/api/attack-types-daily")
+async def attack_types_daily(
+    request: Request,
+    limit: int = Query(10),
+    days: int = Query(30),
+    offset_days: int = Query(0),
+):
+    limit = min(max(1, limit), 20)
+    days = min(max(1, days), 90)
+    offset_days = max(0, offset_days)
+
+    cache_key = f"api:attack_daily:{limit}:{days}:{offset_days}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        return JSONResponse(content=cached, headers=_no_cache_headers())
+
+    db = get_db()
+    try:
+        result = await asyncio.to_thread(
+            db.get_attack_types_daily, limit=limit, days=days, offset_days=offset_days
+        )
+        set_cached_table(cache_key, result)
+        return JSONResponse(content=result, headers=_no_cache_headers())
+    except Exception as e:
+        get_app_logger().error(f"Error fetching daily attack types: {e}")
         return JSONResponse(content={"error": str(e)}, headers=_no_cache_headers())
 
 
@@ -432,8 +515,12 @@ async def attack_types(
     page_size = min(max(1, page_size), 100)
 
     try:
-        result = db.get_attack_types_paginated(
-            page=page, page_size=page_size, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_attack_types_paginated,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         return JSONResponse(content=result, headers=_no_cache_headers())
     except Exception as e:
@@ -445,7 +532,7 @@ async def attack_types(
 async def raw_request(log_id: int, request: Request):
     db = get_db()
     try:
-        raw = db.get_raw_request_by_id(log_id)
+        raw = await asyncio.to_thread(db.get_raw_request_by_id, log_id)
         if raw is None:
             return JSONResponse(
                 content={"error": "Raw request not found"}, status_code=404
@@ -509,3 +596,193 @@ async def download_malicious_ips(request: Request):
     except Exception as e:
         get_app_logger().error(f"Error serving malicious IPs file: {e}")
         return PlainTextResponse("Internal server error", status_code=500)
+
+
+@router.post("/api/delete-generated-pages")
+async def delete_generated_pages(
+    request: Request,
+    before_date: str = Query(None),
+    delete_all: str = Query(None),
+    ids: str = Query(None),
+):
+    """Delete generated deception pages from database.
+
+    Requires authentication. Can delete:
+    - All pages (delete_all=true)
+    - Pages created before a specific date (before_date=YYYY-MM-DD)
+    - Specific pages by ID (ids=id1,id2,id3)
+    """
+    if not verify_auth(request):
+        return JSONResponse(
+            content={"error": "Unauthorized"},
+            status_code=401,
+        )
+
+    db = get_db()
+    deleted_count = 0
+
+    try:
+        if delete_all == "true":
+            # Delete all generated pages
+            deleted_count = db.delete_all_generated_pages()
+            get_app_logger().info(
+                f"[DECEPTION] Deleted all {deleted_count} generated pages"
+            )
+            message = f"✓ Deleted {deleted_count} generated pages"
+
+        elif before_date:
+            # Delete pages older than the specified date
+            # Expected format: YYYY-MM-DD
+            deleted_count = db.delete_generated_pages_before(before_date)
+            get_app_logger().info(
+                f"[DECEPTION] Deleted {deleted_count} pages created before {before_date}"
+            )
+            message = f"✓ Deleted {deleted_count} pages created before {before_date}"
+
+        elif ids:
+            # Delete specific pages by path
+            page_ids = [id.strip() for id in ids.split(",") if id.strip()]
+            deleted_count = db.delete_generated_pages_by_ids(page_ids)
+            get_app_logger().info(f"[DECEPTION] Deleted {deleted_count} selected pages")
+            message = f"✓ Deleted {deleted_count} selected page(s)"
+
+        else:
+            return JSONResponse(
+                content={"error": "Please specify delete_all, before_date, or ids"},
+                status_code=400,
+            )
+
+        # Return the updated deception panel
+        from dependencies import get_templates
+        from routes.htmx import _dashboard_path
+
+        templates = get_templates()
+        return templates.TemplateResponse(
+            request,
+            "dashboard/partials/deception_panel_with_message.html",
+            {
+                "dashboard_path": _dashboard_path(request),
+                "message": message,
+                "deleted_count": deleted_count,
+            },
+        )
+
+    except ValueError as e:
+        get_app_logger().error(f"[DECEPTION] Delete error: {e}")
+        return JSONResponse(
+            content={"error": str(e)},
+            status_code=400,
+        )
+    except Exception as e:
+        get_app_logger().error(f"[DECEPTION] Unexpected error deleting pages: {e}")
+        return JSONResponse(
+            content={"error": "Internal server error"},
+            status_code=500,
+        )
+
+
+@router.get("/api/download-generated-page")
+async def download_generated_page(
+    request: Request,
+    path: str = Query(...),
+):
+    """Download a generated deception page as an HTML file."""
+    if not verify_auth(request):
+        return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+
+    import base64
+    from models import GeneratedPage
+
+    db = get_db()
+    try:
+        session = db.session
+        page = session.query(GeneratedPage).filter(GeneratedPage.path == path).first()
+        if not page:
+            return JSONResponse(content={"error": "Page not found"}, status_code=404)
+
+        html_content = base64.b64decode(page.html_content_b64).decode("utf-8")
+        # Build a safe filename from the path
+        safe_name = path.strip("/").replace("/", "_") or "index"
+        safe_name = safe_name[:100]
+        if not safe_name.endswith(".html"):
+            safe_name += ".html"
+
+        return Response(
+            content=html_content,
+            media_type="text/html",
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_name}"',
+            },
+        )
+    except Exception as e:
+        get_app_logger().error(f"[DECEPTION] Download error: {e}")
+        return JSONResponse(content={"error": "Internal server error"}, status_code=500)
+    finally:
+        db.close_session()
+
+
+class UploadPageRequest(BaseModel):
+    path: str
+    content: str
+
+
+@router.post("/api/upload-generated-page")
+async def upload_generated_page(request: Request, body: UploadPageRequest):
+    """Upload a custom page to serve as a deception page."""
+    if not verify_auth(request):
+        return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+
+    import base64
+    from datetime import datetime
+    from models import GeneratedPage
+
+    path = body.path.strip()
+    content = body.content
+
+    if not path or not content:
+        return JSONResponse(
+            content={"error": "Path and content are required"}, status_code=400
+        )
+
+    # Ensure path starts with /
+    if not path.startswith("/"):
+        path = "/" + path
+
+    # Validate file extension
+    allowed_exts = (".html", ".htm", ".xml", ".json", ".txt", ".css", ".js")
+    if not any(path.endswith(ext) for ext in allowed_exts):
+        # No extension — treat as html
+        pass
+
+    db = get_db()
+    try:
+        session = db.session
+        html_b64 = base64.b64encode(content.encode("utf-8")).decode("utf-8")
+
+        existing = (
+            session.query(GeneratedPage).filter(GeneratedPage.path == path).first()
+        )
+        if existing:
+            existing.html_content_b64 = html_b64
+            existing.last_accessed = datetime.now()
+            get_app_logger().info(f"[DECEPTION] Updated uploaded page: {path}")
+        else:
+            page = GeneratedPage(
+                path=path,
+                html_content_b64=html_b64,
+                created_at=datetime.now(),
+                last_accessed=datetime.now(),
+                access_count=0,
+            )
+            session.add(page)
+            get_app_logger().info(f"[DECEPTION] Uploaded new custom page: {path}")
+
+        session.commit()
+        return JSONResponse(content={"ok": True, "path": path})
+
+    except Exception as e:
+        session.rollback()
+        get_app_logger().error(f"[DECEPTION] Upload error: {e}")
+        return JSONResponse(content={"error": "Internal server error"}, status_code=500)
+    finally:
+        db.close_session()

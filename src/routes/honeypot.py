@@ -38,8 +38,24 @@ from deception_responses import (
     generate_xss_response,
     generate_server_error,
 )
+from generative_ai import (
+    should_use_ai_for_path,
+    generate_html_for_path,
+    get_model,
+    get_provider,
+)
 from wordlists import get_wordlists
 from logger import get_app_logger, get_access_logger, get_credential_logger
+
+
+async def _safe_body(request: Request) -> str:
+    """Read request body, returning empty string on client disconnect."""
+    try:
+        body_bytes = await request.body()
+        return body_bytes.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
 
 # --- Auto-tracking dependency ---
 # Records requests that match attack patterns or honeypot trap paths.
@@ -51,11 +67,11 @@ async def _track_honeypot_request(request: Request):
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("User-Agent", "")
     path = request.url.path
+    get_app_logger().debug(f"[HoneypotDep] {request.method} {path} from {client_ip}")
 
     body = ""
     if request.method in ("POST", "PUT"):
-        body_bytes = await request.body()
-        body = body_bytes.decode("utf-8", errors="replace")
+        body = await _safe_body(request)
 
     # Check attack patterns in path and body
     attack_findings = tracker.detect_attack_type(path)
@@ -68,7 +84,10 @@ async def _track_honeypot_request(request: Request):
 
     # Record if attack pattern detected OR path is a honeypot trap
     if attack_findings or tracker.is_honeypot_path(path):
-        tracker.record_access(
+        import asyncio
+
+        await asyncio.to_thread(
+            tracker.record_access,
             ip=client_ip,
             path=path,
             user_agent=user_agent,
@@ -116,8 +135,7 @@ async def sql_endpoint_post(request: Request):
     client_ip = get_client_ip(request)
     access_logger = get_access_logger()
 
-    body_bytes = await request.body()
-    post_data = body_bytes.decode("utf-8", errors="replace")
+    post_data = await _safe_body(request)
 
     base_path = request.url.path
     access_logger.info(
@@ -148,8 +166,7 @@ async def contact_post(request: Request):
     access_logger = get_access_logger()
     app_logger = get_app_logger()
 
-    body_bytes = await request.body()
-    post_data = body_bytes.decode("utf-8", errors="replace")
+    post_data = await _safe_body(request)
 
     parsed_data = {}
     if post_data:
@@ -178,8 +195,7 @@ async def credential_capture_post(request: Request, path: str):
     access_logger = get_access_logger()
     credential_logger = get_credential_logger()
 
-    body_bytes = await request.body()
-    post_data = body_bytes.decode("utf-8", errors="replace")
+    post_data = await _safe_body(request)
 
     full_path = f"/{path}"
 
@@ -196,8 +212,12 @@ async def credential_capture_post(request: Request, path: str):
             credential_line = f"{timestamp}|{client_ip}|{username or 'N/A'}|{password or 'N/A'}|{full_path}"
             credential_logger.info(credential_line)
 
-            tracker.record_credential_attempt(
-                client_ip, full_path, username or "N/A", password or "N/A"
+            await asyncio.to_thread(
+                tracker.record_credential_attempt,
+                client_ip,
+                full_path,
+                username or "N/A",
+                password or "N/A",
             )
 
             access_logger.warning(
@@ -388,23 +408,33 @@ async def trap_page(request: Request, path: str):
     user_agent = request.headers.get("User-Agent", "")
     full_path = f"/{path}" if path else "/"
 
+    app_logger.debug(f"[TrapPage] {client_ip} - {full_path}")
+
     # Check wordpress-like paths
     if "wordpress" in full_path.lower():
         return HTMLResponse(html_templates.wordpress())
 
     is_suspicious = tracker.is_suspicious_user_agent(user_agent)
 
-    # Record access unless the router dependency already handled it
-    # (attack pattern or honeypot path → already recorded by _track_honeypot_request)
+    # Record access + increment page visit in a single DB transaction.
+    # Skip if the router dependency already recorded this request
+    # (attack pattern or honeypot path → already recorded by _track_honeypot_request).
     if not tracker.detect_attack_type(full_path) and not tracker.is_honeypot_path(
         full_path
     ):
-        tracker.record_access(
+        current_visit_count = await asyncio.to_thread(
+            tracker.record_access,
             ip=client_ip,
             path=full_path,
             user_agent=user_agent,
             method=request.method,
             raw_request=build_raw_request(request) if is_suspicious else "",
+            increment_page_visit=True,
+        )
+    else:
+        # Already recorded by dependency; still need page visit count
+        current_visit_count = await asyncio.to_thread(
+            tracker.increment_page_visit, client_ip
         )
 
     # Random error response
@@ -412,6 +442,32 @@ async def trap_page(request: Request, path: str):
         error_code = _get_random_error_code()
         access_logger.info(f"Returning error {error_code} to {client_ip} - {full_path}")
         return Response(status_code=error_code)
+
+    # Try AI generation for paths not in robots.txt
+    if should_use_ai_for_path(full_path):
+        try:
+            (
+                html_content,
+                content_type,
+                status_code,
+                was_cached,
+            ) = await generate_html_for_path(full_path, request.url.query or "")
+            model = get_model()
+            provider = get_provider()
+            cache_flag = "[CACHED]" if was_cached else ""
+            if cache_flag:
+                access_logger.info(
+                    f"[AI GENERATED] {cache_flag} {client_ip} - {full_path} - {provider}/{model}"
+                )
+            else:
+                access_logger.info(
+                    f"[AI GENERATED] {client_ip} - {full_path} - {provider}/{model}"
+                )
+            return HTMLResponse(content=html_content, status_code=status_code)
+        except Exception as err:
+            app_logger.warning(
+                f"AI generation failed for {full_path}, falling back to default: {err}"
+            )
 
     # Response delay
     await asyncio.sleep(config.delay / 1000.0)

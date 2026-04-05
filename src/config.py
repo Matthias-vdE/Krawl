@@ -18,6 +18,25 @@ import yaml
 class Config:
     """Configuration class for the deception server"""
 
+    # Deployment mode: "standalone" (SQLite + in-memory) or "scalable" (PostgreSQL + Redis)
+    mode: str = "standalone"
+
+    # PostgreSQL settings (scalable mode)
+    postgres_host: str = "localhost"
+    postgres_port: int = 5432
+    postgres_user: str = "krawl"
+    postgres_password: str = "krawl"
+    postgres_database: str = "krawl"
+
+    # Redis settings (scalable mode)
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: Optional[str] = None
+    redis_cache_ttl: int = 600
+    redis_hot_ttl: int = 30
+    redis_table_ttl: int = 120
+
     port: int = 5000
     delay: int = 100  # milliseconds
     server_header: str = ""
@@ -30,6 +49,7 @@ class Config:
     dashboard_secret_path: str = None
     dashboard_password: Optional[str] = None
     dashboard_password_generated: bool = False
+    dashboard_cache_warmup: bool = True
     probability_error_codes: int = 0  # Percentage (0-100)
 
     # Crawl limiting settings - for legitimate vs malicious crawlers
@@ -49,6 +69,7 @@ class Config:
     # Database settings
     database_path: str = "data/krawl.db"
     database_retention_days: int = 30
+    database_persist_suspicious_only: bool = False
 
     # Analyzer settings
     http_risky_methods_threshold: float = None
@@ -64,72 +85,62 @@ class Config:
 
     log_level: str = "INFO"
 
+    # AI generation settings
+    ai_enabled: bool = False
+    ai_provider: str = "openrouter"
+    ai_api_key: Optional[str] = None
+    ai_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    ai_prompt: str = ""
+    ai_timeout: int = 60
+    ai_max_daily_requests: int = 0
+    ai_reasoning_enabled: bool = True
+    ai_reasoning_effort: str = "medium"
+
     _server_ip: Optional[str] = None
-    _server_ip_cache_time: float = 0
-    _ip_cache_ttl: int = 300
+    _server_ip_resolved: bool = False
 
-    def get_server_ip(self, refresh: bool = False) -> Optional[str]:
+    def resolve_server_ip(self) -> None:
         """
-        Get the server's own public IP address.
-        Excludes requests from the server itself from being tracked.
+        Resolve the server's public IP once at startup.
+        Stores the result (or None) permanently — no repeated lookups.
         """
-
-        current_time = time.time()
-
-        # Check if cache is valid and not forced refresh
-        if (
-            self._server_ip is not None
-            and not refresh
-            and (current_time - self._server_ip_cache_time) < self._ip_cache_ttl
-        ):
-            return self._server_ip
+        if self._server_ip_resolved:
+            return
 
         try:
-            # Try multiple external IP detection services (fallback chain)
             ip_detection_services = [
-                "https://api.ipify.org",  # Plain text response
-                "http://ident.me",  # Plain text response
-                "https://ifconfig.me",  # Plain text response
+                "https://api.ipify.org",
+                "http://ident.me",
+                "https://ifconfig.me",
             ]
 
-            ip = None
             for service_url in ip_detection_services:
                 try:
                     response = requests.get(service_url, timeout=5)
                     if response.status_code == 200:
                         ip = response.text.strip()
                         if ip:
-                            break
+                            self._server_ip = ip
+                            self._server_ip_resolved = True
+                            return
                 except requests.RequestException:
                     continue
 
-            if not ip:
-                get_app_logger().warning(
-                    "Could not determine server IP from external services. "
-                    "All IPs will be tracked (including potential server IP)."
-                )
-                return None
-
-            self._server_ip = ip
-            self._server_ip_cache_time = current_time
-            return ip
-
+            get_app_logger().warning(
+                "Could not determine server IP from external services. "
+                "All IPs will be tracked (including potential server IP)."
+            )
         except Exception as e:
             get_app_logger().warning(
                 f"Could not determine server IP address: {e}. "
                 "All IPs will be tracked (including potential server IP)."
             )
-            return None
 
-    def refresh_server_ip(self) -> Optional[str]:
-        """
-        Force refresh the cached server IP.
-        Use this if you suspect the IP has changed.
+        self._server_ip_resolved = True
 
-        Returns:
-            New server IP address or None if unable to determine
-        """
-        return self.get_server_ip(refresh=True)
+    def get_server_ip(self) -> Optional[str]:
+        """Get the server's public IP (resolved once at startup)."""
+        return self._server_ip
 
     @classmethod
     def from_yaml(cls) -> "Config":
@@ -160,6 +171,9 @@ class Config:
             data = {}
 
         # Extract nested values with defaults
+        mode = data.get("mode", "standalone")
+        postgres_cfg = data.get("postgres", {})
+        redis_cfg = data.get("redis", {})
         server = data.get("server", {})
         links = data.get("links", {})
         canary = data.get("canary", {})
@@ -173,6 +187,7 @@ class Config:
         crawl = data.get("crawl", {})
         tarpit = data.get("tarpit", {})
         logging_cfg = data.get("logging", {})
+        ai = data.get("ai", {})
 
         # Handle dashboard_secret_path - auto-generate if null/not set
         dashboard_path = dashboard.get("secret_path")
@@ -190,7 +205,28 @@ class Config:
             dashboard_password = os.urandom(25).hex()
             dashboard_password_generated = True
 
+        # Validate mode
+        if mode not in ("standalone", "scalable"):
+            print(
+                f"Error: Invalid mode '{mode}'. Must be 'standalone' or 'scalable'.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         return cls(
+            mode=mode,
+            postgres_host=postgres_cfg.get("host", "localhost"),
+            postgres_port=postgres_cfg.get("port", 5432),
+            postgres_user=postgres_cfg.get("user", "krawl"),
+            postgres_password=postgres_cfg.get("password", "krawl"),
+            postgres_database=postgres_cfg.get("database", "krawl"),
+            redis_host=redis_cfg.get("host", "localhost"),
+            redis_port=redis_cfg.get("port", 6379),
+            redis_db=redis_cfg.get("db", 0),
+            redis_password=redis_cfg.get("password") or None,
+            redis_cache_ttl=redis_cfg.get("cache_ttl", 600),
+            redis_hot_ttl=redis_cfg.get("hot_ttl", 30),
+            redis_table_ttl=redis_cfg.get("table_ttl", 120),
             port=server.get("port", 5000),
             delay=server.get("delay", 100),
             server_header=server.get("server_header", ""),
@@ -212,6 +248,7 @@ class Config:
             dashboard_secret_path=dashboard_path,
             dashboard_password=dashboard_password,
             dashboard_password_generated=dashboard_password_generated,
+            dashboard_cache_warmup=dashboard.get("cache_warmup", True),
             probability_error_codes=behavior.get("probability_error_codes", 0),
             exports_path=exports.get("path", "exports"),
             backups_path=backups.get("path", "backups"),
@@ -219,6 +256,9 @@ class Config:
             backups_cron=backups.get("cron"),
             database_path=database.get("path", "data/krawl.db"),
             database_retention_days=database.get("retention_days", 30),
+            database_persist_suspicious_only=database.get(
+                "persist_suspicious_only", False
+            ),
             http_risky_methods_threshold=analyzer.get(
                 "http_risky_methods_threshold", 0.1
             ),
@@ -241,6 +281,31 @@ class Config:
             log_level=os.getenv(
                 "KRAWL_LOG_LEVEL", logging_cfg.get("level", "INFO")
             ).upper(),
+            ai_enabled=ai.get("enabled", False),
+            ai_provider=ai.get("provider", "openrouter").lower(),
+            ai_api_key=ai.get("api_key"),
+            ai_model=ai.get("model", "nvidia/nemotron-3-super-120b-a12b:free"),
+            ai_reasoning_enabled=ai.get("reasoning", {}).get("enabled", True),
+            ai_reasoning_effort=ai.get("reasoning", {}).get("effort", "medium"),
+            ai_prompt=ai.get(
+                "prompt",
+                """Your goal is to create a plausible but fake intentionally vulnerable page that might appear on a real server, that can distract attackers. 
+Your input will be a query path, that the attacker asked for. 
+
+Follow this rules:
+1. You must output ONLY the HTML, nothing else
+2. Include realistic content if necessary (links, text, forms, etc.)
+3. Do not add markdown, code blocks, or explanations
+4. Do not include any file in the html, generate everything needed in one single file
+5. Include proper HTML structure with head and body tags
+6. If the request is a common attack vector (e.g., SQLi, XSS), include fake data in response
+7. If the request has a file extension, generate a RAW content relevant to that type (e.g. a fake json for .json requests)
+
+Path: {path}{query_part}
+Generate the complete HTML page.""",
+            ),
+            ai_timeout=ai.get("timeout", 60),
+            ai_max_daily_requests=ai.get("max_daily_requests", 0),
         )
 
 
@@ -280,7 +345,8 @@ def override_config_from_env(config: Config = None):
                     if len(parts) == 2:
                         setattr(config, field, (int(parts[0]), int(parts[1])))
                 else:
-                    setattr(config, field, env_value)
+                    # Treat empty strings as None for Optional fields (e.g. passwords)
+                    setattr(config, field, env_value if env_value else None)
             except Exception as e:
                 get_app_logger().error(
                     f"Error overriding config '{field}' from environment variable '{env_var}': {e}"
