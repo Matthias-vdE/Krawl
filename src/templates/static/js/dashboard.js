@@ -122,6 +122,9 @@ document.addEventListener('alpine:init', () => {
         authModal: { show: false, password: '', error: '', loading: false },
         uploadModal: { show: false, path: '', fileName: '', fileContent: '', error: '', success: '', loading: false, dragging: false },
 
+        // Expand overlay state
+        expandOverlay: { show: false, title: '', endpoint: '', pageSize: 25, search: '' },
+
         // Flag to prevent double-triggering during init
         _initializingHash: false,
 
@@ -705,6 +708,30 @@ window.submitUploadPage = async function() {
     }
     modal.loading = false;
 };
+
+// === Expand overlay for Top X tables ===
+window.openExpandOverlay = function(title, endpoint, pageSize) {
+    const app = _getAlpineData();
+    if (!app) return;
+    Object.assign(app.expandOverlay, { show: true, title: title, endpoint: endpoint, pageSize: pageSize || 25, search: '' });
+    _loadExpandContent(endpoint, pageSize || 25, '');
+};
+
+window.triggerExpandSearch = function() {
+    const app = _getAlpineData();
+    if (!app) return;
+    const ov = app.expandOverlay;
+    _loadExpandContent(ov.endpoint, ov.pageSize, ov.search);
+};
+
+function _loadExpandContent(endpoint, pageSize, search) {
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    const container = document.getElementById('expand-overlay-table');
+    if (!container) return;
+    const url = `${dashboardPath}/htmx/${endpoint}?page=1&page_size=${pageSize}&search=${encodeURIComponent(search || '')}`;
+    container.innerHTML = '<div style="text-align: center; padding: 40px; color: #8b949e;">Loading...</div>';
+    htmx.ajax('GET', url, { target: container, swap: 'innerHTML' });
+}
 
 // Escape HTML to prevent XSS when inserting into innerHTML
 function escapeHtml(str) {

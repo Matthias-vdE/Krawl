@@ -1,0 +1,27 @@
+{# Expand overlay - reusable fullscreen panel for Top X tables #}
+<div class="expand-overlay"
+     id="expand-overlay"
+     x-show="expandOverlay.show"
+     x-cloak
+     @keydown.escape.window="expandOverlay.show && (expandOverlay.show = false)"
+>
+    <div class="expand-overlay-content">
+        <div class="expand-overlay-header">
+            <h2 x-text="expandOverlay.title" style="margin: 0; color: #58a6ff; font-size: 1.3em;"></h2>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <input type="text"
+                       class="expand-overlay-search"
+                       placeholder="Filter..."
+                       x-model="expandOverlay.search"
+                       @input.debounce.300ms="triggerExpandSearch()"
+                       autocomplete="off" />
+                <span class="auth-modal-close" @click="expandOverlay.show = false" style="position: static; font-size: 28px;">&times;</span>
+            </div>
+        </div>
+        <div class="expand-overlay-body">
+            <div class="htmx-container" id="expand-overlay-table">
+                <div style="text-align: center; padding: 40px; color: #8b949e;">Loading...</div>
+            </div>
+        </div>
+    </div>
+</div>
