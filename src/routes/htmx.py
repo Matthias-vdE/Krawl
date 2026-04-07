@@ -74,9 +74,11 @@ async def htmx_top_ips(
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
     search: str = Query(""),
+    categories: str = Query(""),
 ):
     search = search.strip() or None
-    # Serve from cache on default first-page request (no search, default page_size)
+    cat_list = [c.strip() for c in categories.split(",") if c.strip()] or None
+    # Serve from cache on default first-page request (no search/filters, default page_size)
     cached = (
         get_cached("top_ips")
         if (
@@ -86,6 +88,7 @@ async def htmx_top_ips(
             and sort_by == "count"
             and sort_order == "desc"
             and not search
+            and not cat_list
             and is_warm()
         )
         else None
@@ -101,6 +104,7 @@ async def htmx_top_ips(
             sort_by=sort_by,
             sort_order=sort_order,
             search=search,
+            categories=cat_list,
         )
 
     templates = get_templates()
@@ -114,6 +118,7 @@ async def htmx_top_ips(
             "sort_by": sort_by,
             "sort_order": sort_order,
             "search": search or "",
+            "categories": ",".join(cat_list) if cat_list else "",
         },
     )
 
@@ -129,8 +134,10 @@ async def htmx_top_paths(
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
     search: str = Query(""),
+    honeypot_only: str = Query(""),
 ):
     search = search.strip() or None
+    is_honeypot = honeypot_only.strip().lower() in ("1", "true", "yes")
     cached = (
         get_cached("top_paths")
         if (
@@ -140,6 +147,7 @@ async def htmx_top_paths(
             and sort_by == "count"
             and sort_order == "desc"
             and not search
+            and not is_honeypot
             and is_warm()
         )
         else None
@@ -155,6 +163,7 @@ async def htmx_top_paths(
             sort_by=sort_by,
             sort_order=sort_order,
             search=search,
+            honeypot_only=is_honeypot,
         )
 
     templates = get_templates()
@@ -168,6 +177,7 @@ async def htmx_top_paths(
             "sort_by": sort_by,
             "sort_order": sort_order,
             "search": search or "",
+            "honeypot_only": "1" if is_honeypot else "",
         },
     )
 
