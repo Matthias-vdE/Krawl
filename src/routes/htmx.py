@@ -70,17 +70,25 @@ async def htmx_honeypot(
 async def htmx_top_ips(
     request: Request,
     page: int = Query(1),
+    page_size: int = Query(8),
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
+    search: str = Query(""),
+    categories: str = Query(""),
 ):
-    # Serve from cache on default first-page request
+    search = search.strip() or None
+    cat_list = [c.strip() for c in categories.split(",") if c.strip()] or None
+    # Serve from cache on default first-page request (no search/filters, default page_size)
     cached = (
         get_cached("top_ips")
         if (
             get_config().dashboard_cache_warmup
             and page == 1
+            and page_size == 8
             and sort_by == "count"
             and sort_order == "desc"
+            and not search
+            and not cat_list
             and is_warm()
         )
         else None
@@ -92,9 +100,11 @@ async def htmx_top_ips(
         result = await asyncio.to_thread(
             db.get_top_ips_paginated,
             page=max(1, page),
-            page_size=8,
+            page_size=min(page_size, 100),
             sort_by=sort_by,
             sort_order=sort_order,
+            search=search,
+            categories=cat_list,
         )
 
     templates = get_templates()
@@ -107,6 +117,8 @@ async def htmx_top_ips(
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
+            "search": search or "",
+            "categories": ",".join(cat_list) if cat_list else "",
         },
     )
 
@@ -118,16 +130,24 @@ async def htmx_top_ips(
 async def htmx_top_paths(
     request: Request,
     page: int = Query(1),
+    page_size: int = Query(5),
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
+    search: str = Query(""),
+    honeypot_only: str = Query(""),
 ):
+    search = search.strip() or None
+    is_honeypot = honeypot_only.strip().lower() in ("1", "true", "yes")
     cached = (
         get_cached("top_paths")
         if (
             get_config().dashboard_cache_warmup
             and page == 1
+            and page_size == 5
             and sort_by == "count"
             and sort_order == "desc"
+            and not search
+            and not is_honeypot
             and is_warm()
         )
         else None
@@ -139,9 +159,11 @@ async def htmx_top_paths(
         result = await asyncio.to_thread(
             db.get_top_paths_paginated,
             page=max(1, page),
-            page_size=5,
+            page_size=min(page_size, 100),
             sort_by=sort_by,
             sort_order=sort_order,
+            search=search,
+            honeypot_only=is_honeypot,
         )
 
     templates = get_templates()
@@ -154,6 +176,8 @@ async def htmx_top_paths(
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
+            "search": search or "",
+            "honeypot_only": "1" if is_honeypot else "",
         },
     )
 
@@ -243,16 +267,21 @@ async def htmx_generated_pages_readonly(
 async def htmx_top_ua(
     request: Request,
     page: int = Query(1),
+    page_size: int = Query(5),
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
+    search: str = Query(""),
 ):
+    search = search.strip() or None
     cached = (
         get_cached("top_ua")
         if (
             get_config().dashboard_cache_warmup
             and page == 1
+            and page_size == 5
             and sort_by == "count"
             and sort_order == "desc"
+            and not search
             and is_warm()
         )
         else None
@@ -264,9 +293,10 @@ async def htmx_top_ua(
         result = await asyncio.to_thread(
             db.get_top_user_agents_paginated,
             page=max(1, page),
-            page_size=5,
+            page_size=min(page_size, 100),
             sort_by=sort_by,
             sort_order=sort_order,
+            search=search,
         )
 
     templates = get_templates()
@@ -279,6 +309,7 @@ async def htmx_top_ua(
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
+            "search": search or "",
         },
     )
 

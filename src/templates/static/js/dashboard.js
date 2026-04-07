@@ -122,6 +122,9 @@ document.addEventListener('alpine:init', () => {
         authModal: { show: false, password: '', error: '', loading: false },
         uploadModal: { show: false, path: '', fileName: '', fileContent: '', error: '', success: '', loading: false, dragging: false },
 
+        // Expand overlay state
+        expandOverlay: { show: false, title: '', endpoint: '', pageSize: 25, search: '', categories: [], honeypotOnly: false },
+
         // Flag to prevent double-triggering during init
         _initializingHash: false,
 
@@ -706,62 +709,65 @@ window.submitUploadPage = async function() {
     modal.loading = false;
 };
 
-// === Export IPs modal ===
-window.openExportModal = function() {
+// === Expand overlay for Top X tables ===
+window.openExpandOverlay = function(title, endpoint, pageSize) {
     const app = _getAlpineData();
     if (!app) return;
-    Object.assign(app.exportModal, { show: true, categories: ['attacker'], fwtype: 'raw', error: '', loading: false });
+    Object.assign(app.expandOverlay, {
+        show: true, title: title, endpoint: endpoint,
+        pageSize: pageSize || 25, search: '',
+        categories: [], honeypotOnly: false,
+    });
+    _reloadExpandOverlay();
 };
 
-window.submitExport = async function() {
+window.triggerExpandSearch = function() {
+    _reloadExpandOverlay();
+};
+
+window.toggleExpandCategory = function(cat) {
     const app = _getAlpineData();
     if (!app) return;
-    const modal = app.exportModal;
-    modal.error = '';
+    const cats = app.expandOverlay.categories;
+    const idx = cats.indexOf(cat);
+    if (idx >= 0) cats.splice(idx, 1);
+    else cats.push(cat);
+    _reloadExpandOverlay();
+};
 
-    if (modal.categories.length === 0) {
-        modal.error = 'Select at least one category';
-        return;
-    }
+window.toggleExpandHoneypot = function() {
+    const app = _getAlpineData();
+    if (!app) return;
+    app.expandOverlay.honeypotOnly = !app.expandOverlay.honeypotOnly;
+    _reloadExpandOverlay();
+};
 
-    modal.loading = true;
+function _reloadExpandOverlay() {
+    const app = _getAlpineData();
+    if (!app) return;
+    const ov = app.expandOverlay;
     const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    const container = document.getElementById('expand-overlay-table');
+    if (!container) return;
+
     const params = new URLSearchParams({
-        categories: modal.categories.join(','),
-        fwtype: modal.fwtype,
+        page: '1',
+        page_size: String(ov.pageSize),
+        search: ov.search || '',
     });
 
-    try {
-        const resp = await fetch(`${dashboardPath}/api/export-ips?${params}`, {
-            credentials: 'same-origin',
-        });
-        if (!resp.ok) {
-            const data = await resp.json();
-            modal.error = data.error || 'Export failed';
-            return;
-        }
-        const blob = await resp.blob();
-        const disposition = resp.headers.get('Content-Disposition');
-        let filename = 'export.txt';
-        if (disposition) {
-            const match = disposition.match(/filename="(.+)"/);
-            if (match) filename = match[1];
-        }
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        modal.show = false;
-    } catch (e) {
-        modal.error = 'Network error';
-    } finally {
-        modal.loading = false;
+    // Contextual filters
+    if (ov.endpoint === 'top-ips' && ov.categories.length > 0) {
+        params.set('categories', ov.categories.join(','));
     }
-};
+    if (ov.endpoint === 'top-paths' && ov.honeypotOnly) {
+        params.set('honeypot_only', '1');
+    }
+
+    const url = `${dashboardPath}/htmx/${ov.endpoint}?${params}`;
+    container.innerHTML = '<div style="text-align: center; padding: 40px; color: #8b949e;">Loading...</div>';
+    htmx.ajax('GET', url, { target: container, swap: 'innerHTML' });
+}
 
 // Escape HTML to prevent XSS when inserting into innerHTML
 function escapeHtml(str) {
