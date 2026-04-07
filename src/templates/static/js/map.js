@@ -271,9 +271,15 @@ function _createIpMarker(ip, animate) {
  * Fetch IPs and stream batches to the map (with pop animation) when loading "all".
  * For fixed limits, fetches once and builds all markers at once.
  */
-async function fetchAndBuildMap(limit) {
+function _getMapSortBy() {
+    const activeBtn = document.querySelector('#map-sort-selector .map-limit-btn.active');
+    return activeBtn ? activeBtn.dataset.sort : 'last_seen';
+}
+
+async function fetchAndBuildMap(limit, sortBy) {
     const DASHBOARD_PATH = window.__DASHBOARD_PATH__ || '';
     const headers = { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' };
+    sortBy = sortBy || _getMapSortBy();
 
     // Reset state
     if (clusterGroup) {
@@ -304,7 +310,7 @@ async function fetchAndBuildMap(limit) {
         if (fetchSize <= 0) break;
 
         const response = await fetch(
-            `${DASHBOARD_PATH}/api/all-ips?page=${page}&page_size=${fetchSize}&sort_by=total_requests&sort_order=desc`,
+            `${DASHBOARD_PATH}/api/all-ips?page=${page}&page_size=${fetchSize}&sort_by=${sortBy}&sort_order=desc`,
             { cache: 'no-store', headers }
         );
         if (!response.ok) throw new Error('Failed to fetch IPs');
@@ -402,10 +408,10 @@ async function initializeAttackerMap() {
             ]
         });
 
-        const activeBtn = document.querySelector('.map-limit-btn.active');
+        const activeBtn = document.querySelector('#map-limit-selector .map-limit-btn.active');
         const limit = activeBtn ? activeBtn.dataset.value : '1000';
 
-        await fetchAndBuildMap(limit);
+        await fetchAndBuildMap(limit, _getMapSortBy());
 
         if (allIps.length === 0) {
             mapContainer.innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #8b949e;">No IP location data available</div>';
@@ -441,6 +447,13 @@ async function reloadMapWithLimit(limit) {
         const existing = document.getElementById('map-loading-overlay');
         if (existing) existing.remove();
     }
+}
+
+async function reloadMapWithSort() {
+    if (!attackerMap) return;
+    const activeBtn = document.querySelector('#map-limit-selector .map-limit-btn.active');
+    const limit = activeBtn ? activeBtn.dataset.value : '1000';
+    await reloadMapWithLimit(limit);
 }
 
 // Update map filters based on checkbox selection
