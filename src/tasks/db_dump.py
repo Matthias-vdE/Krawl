@@ -72,13 +72,18 @@ def _dump_pg():
 
     cmd = [
         "pg_dump",
-        "-h", host,
-        "-p", port,
-        "-U", user,
-        "-d", database,
+        "-h",
+        host,
+        "-p",
+        port,
+        "-U",
+        user,
+        "-d",
+        database,
         "--no-owner",
         "--no-privileges",
-        "-f", output_file,
+        "-f",
+        output_file,
     ]
 
     try:
@@ -102,9 +107,7 @@ def _dump_pg():
             "Install postgresql-client to enable PostgreSQL backups."
         )
     except subprocess.TimeoutExpired:
-        app_logger.error(
-            f"[Background Task] {task_name} pg_dump timed out after 300s"
-        )
+        app_logger.error(f"[Background Task] {task_name} pg_dump timed out after 300s")
 
 
 def main():
