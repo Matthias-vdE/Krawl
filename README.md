@@ -382,7 +382,7 @@ curl "https://your-krawl-instance/<DASHBOARD-PATH>/api/export-ips?categories=att
 ```
 
 This enables automatic blocking of malicious traffic across various platforms:
-* [OPNsense and pfSense](https://www.allthingstech.ch/using-opnsense-and-ip-blocklists-to-block-malicious-traffic)
+* [OPNsense and pfSense](https://ipv64.net/v64_blocklist_integration_guide)
 * [RouterOS](https://rentry.co/krawl-routeros)
 * [IPtables](plugins/iptables/README.md) and [Nftables](plugins/nftables/README.md)
 * [Fail2Ban](plugins/fail2ban/README.md)
