@@ -9,12 +9,11 @@ All endpoints are prefixed with the secret dashboard path.
 import asyncio
 import hashlib
 import hmac
-import os
 import secrets
 import time
 
 from fastapi import APIRouter, Request, Response, Query, Cookie
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from dependencies import get_db, get_client_ip
@@ -598,61 +597,6 @@ async def export_ips(
     except Exception as e:
         get_app_logger().error(f"Error exporting IPs: {e}")
         return JSONResponse(content={"error": "Internal server error"}, status_code=500)
-
-
-@router.get("/api/get_banlist")
-async def get_banlist(request: Request, fwtype: str = Query("iptables")):
-    config = request.app.state.config
-
-    filename = f"{fwtype}_banlist.txt"
-    if fwtype == "raw":
-        filename = "malicious_ips.txt"
-
-    file_path = os.path.join(config.exports_path, filename)
-
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                content = f.read()
-            return Response(
-                content=content,
-                status_code=200,
-                media_type="text/plain",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{filename}"',
-                    "Content-Length": str(len(content)),
-                },
-            )
-        else:
-            return PlainTextResponse("File not found", status_code=404)
-    except Exception as e:
-        get_app_logger().error(f"Error serving malicious IPs file: {e}")
-        return PlainTextResponse("Internal server error", status_code=500)
-
-
-@router.get("/api/download/malicious_ips.txt")
-async def download_malicious_ips(request: Request):
-    config = request.app.state.config
-    file_path = os.path.join(config.exports_path, "malicious_ips.txt")
-
-    try:
-        if os.path.exists(file_path):
-            with open(file_path, "rb") as f:
-                content = f.read()
-            return Response(
-                content=content,
-                status_code=200,
-                media_type="text/plain",
-                headers={
-                    "Content-Disposition": 'attachment; filename="malicious_ips.txt"',
-                    "Content-Length": str(len(content)),
-                },
-            )
-        else:
-            return PlainTextResponse("File not found", status_code=404)
-    except Exception as e:
-        get_app_logger().error(f"Error serving malicious IPs file: {e}")
-        return PlainTextResponse("Internal server error", status_code=500)
 
 
 @router.post("/api/delete-generated-pages")

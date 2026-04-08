@@ -157,7 +157,6 @@ services:
       - ./wordlists.json:/app/wordlists.json:ro
       - ./config.yaml:/app/config.yaml:ro
       - ./logs:/app/logs
-      - ./exports:/app/exports
       - ./data:/app/data
       - ./backups:/app/backups
     restart: unless-stopped
@@ -227,7 +226,6 @@ services:
       - ./wordlists.json:/app/wordlists.json:ro
       - ./config.yaml:/app/config.yaml:ro
       - ./logs:/app/logs
-      - ./exports:/app/exports
       - ./backups:/app/backups
     restart: unless-stopped
     depends_on:

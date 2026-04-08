@@ -59,9 +59,6 @@ class Config:
     infinite_pages_for_malicious: bool = True  # Infinite pages for malicious crawlers
     ban_duration_seconds: int = 600  # Ban duration in seconds for IPs exceeding limits
 
-    # exporter settings
-    exports_path: str = "exports"
-
     # backup job settings
     backups_path: str = "backups"
     backups_enabled: bool = False
@@ -179,7 +176,6 @@ class Config:
         canary = data.get("canary", {})
         dashboard = data.get("dashboard", {})
         api = data.get("api", {})
-        exports = data.get("exports", {})
         backups = data.get("backups", {})
         database = data.get("database", {})
         behavior = data.get("behavior", {})
@@ -250,7 +246,6 @@ class Config:
             dashboard_password_generated=dashboard_password_generated,
             dashboard_cache_warmup=dashboard.get("cache_warmup", True),
             probability_error_codes=behavior.get("probability_error_codes", 0),
-            exports_path=exports.get("path", "exports"),
             backups_path=backups.get("path", "backups"),
             backups_enabled=backups.get("enabled", False),
             backups_cron=backups.get("cron"),
