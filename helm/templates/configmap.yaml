@@ -27,8 +27,6 @@ data:
       path: {{ .Values.config.backups.path | quote }}
       cron: {{ .Values.config.backups.cron | quote }}
       enabled: {{ .Values.config.backups.enabled }}
-    exports:
-      path: {{ .Values.config.exports.path | quote }}
     logging:
       level: {{ .Values.config.logging.level | quote }}
     database:

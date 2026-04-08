@@ -73,8 +73,6 @@ data:
       path: "backups"
       cron: "*/30 * * * *"
       enabled: false
-    exports:
-      path: "exports"
     logging:
       level: "INFO"
     database:

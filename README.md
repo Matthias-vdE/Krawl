@@ -171,7 +171,6 @@ services:
       # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - ./exports:/app/exports
       - krawl-data:/app/data
     restart: unless-stopped
 
@@ -230,7 +229,6 @@ services:
       # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      - ./exports:/app/exports
     restart: unless-stopped
     depends_on:
       postgres:
@@ -308,7 +306,6 @@ You can use the [config.yaml](config.yaml) file for advanced configurations, suc
 | `KRAWL_DASHBOARD_PASSWORD` | Password for protected dashboard panels | Auto-generated |
 | `KRAWL_PROBABILITY_ERROR_CODES` | Error response probability (0-100%) | `0` |
 | `KRAWL_DATABASE_PATH` | Database file location | `data/krawl.db` |
-| `KRAWL_EXPORTS_PATH` | Path where firewalls rule sets are exported | `exports` |
 | `KRAWL_BACKUPS_PATH` | Path where database dump are saved | `backups` |
 | `KRAWL_BACKUPS_CRON` | cron expression to control backup job schedule | `*/30 * * * *` |
 | `KRAWL_BACKUPS_ENABLED` | Boolean to enable db dump job | `true` |
