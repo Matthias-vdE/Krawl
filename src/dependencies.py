@@ -10,6 +10,7 @@ from datetime import datetime
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+from jinja2 import select_autoescape
 
 from config import Config
 from tracker import AccessTracker
@@ -21,11 +22,17 @@ _templates = None
 
 
 def get_templates() -> Jinja2Templates:
-    """Get shared Jinja2Templates instance with custom filters."""
+    """Get shared Jinja2Templates instance with custom filters and secure configuration."""
     global _templates
     if _templates is None:
         templates_dir = os.path.join(os.path.dirname(__file__), "templates", "jinja2")
         _templates = Jinja2Templates(directory=templates_dir)
+        # Enable autoescape to prevent XSS vulnerabilities
+        _templates.env.autoescape = select_autoescape(
+            enabled_extensions=("html", "xml", "jinja2"),
+            default_for_string=True,
+            default=True,
+        )
         _templates.env.filters["format_ts"] = _format_ts
     return _templates
 
@@ -43,7 +50,7 @@ def _format_ts(value, time_only=False):
         return value.strftime("%H:%M:%S")
     if value.date() == datetime.now().date():
         return value.strftime("%H:%M:%S")
-    return value.strftime("%m/%d/%Y %H:%M:%S")
+    return value.strftime("%d/%m/%Y %H:%M:%S")
 
 
 def get_tracker(request: Request) -> AccessTracker:
@@ -59,14 +66,14 @@ def get_db() -> DatabaseManager:
 
 
 def get_client_ip(request: Request) -> str:
-    """Extract client IP address from request, checking proxy headers first."""
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+    """Extract client IP address from request, checking proxy headers in order from wordlists."""
+    from wordlists import get_wordlists
 
-    real_ip = request.headers.get("X-Real-IP")
-    if real_ip:
-        return real_ip.strip()
+    for header in get_wordlists().proxy_headers:
+        value = request.headers.get(header)
+        if value:
+            # X-Forwarded-For can contain multiple IPs, take the first
+            return value.split(",")[0].strip()
 
     if request.client:
         return request.client.host

@@ -5,14 +5,35 @@ Dashboard page route.
 Renders the main dashboard page with server-side data for initial load.
 """
 
+import os
+from pathlib import Path
+
+import yaml
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from logger import get_app_logger
 
 from dependencies import get_db, get_templates
+from config import get_config
 from dashboard_cache import get_cached, is_warm
 
 router = APIRouter()
+
+
+def _get_krawl_version() -> str:
+    """Read version from Chart.yaml, with KRAWL_VERSION env var as override."""
+    env = os.getenv("KRAWL_VERSION")
+    if env:
+        return env
+    chart_path = Path(__file__).resolve().parent.parent.parent / "Chart.yaml"
+    if chart_path.exists():
+        with open(chart_path) as f:
+            chart = yaml.safe_load(f)
+        return str(chart.get("appVersion", "dev"))
+    return "dev"
+
+
+KRAWL_VERSION = _get_krawl_version()
 
 
 @router.get("")
@@ -22,33 +43,48 @@ async def dashboard_page(request: Request):
     dashboard_path = "/" + config.dashboard_secret_path.lstrip("/")
 
     # Serve from pre-computed cache when available, fall back to live queries
-    if is_warm():
+    if get_config().dashboard_cache_warmup and is_warm():
         stats = get_cached("stats")
         suspicious = get_cached("suspicious")
     else:
+        import asyncio
+
         db = get_db()
-        stats = db.get_dashboard_counts()
-        suspicious = db.get_recent_suspicious(limit=10)
-        cred_result = db.get_credentials_paginated(page=1, page_size=1)
+        stats = await asyncio.to_thread(db.get_dashboard_counts)
+        suspicious = await asyncio.to_thread(db.get_recent_suspicious, 10)
+        cred_result = await asyncio.to_thread(
+            db.get_credentials_paginated, page=1, page_size=1
+        )
         stats["credential_count"] = cred_result["pagination"]["total"]
 
     templates = get_templates()
+
+    # Ensure stats is a clean dict with only serializable values
+    clean_stats = {
+        k: v
+        for k, v in stats.items()
+        if isinstance(v, (int, str, float, type(None), bool))
+    }
+
     return templates.TemplateResponse(
+        request,
         "dashboard/index.html",
         {
-            "request": request,
             "dashboard_path": dashboard_path,
-            "stats": stats,
+            "stats": clean_stats,
             "suspicious_activities": suspicious,
+            "krawl_version": KRAWL_VERSION,
         },
     )
 
 
 @router.get("/ip/{ip_address:path}")
 async def ip_page(ip_address: str, request: Request):
+    import asyncio
+
     db = get_db()
     try:
-        stats = db.get_ip_stats_by_ip(ip_address)
+        stats = await asyncio.to_thread(db.get_ip_stats_by_ip, ip_address)
         config = request.app.state.config
         dashboard_path = "/" + config.dashboard_secret_path.lstrip("/")
 
@@ -58,13 +94,22 @@ async def ip_page(ip_address: str, request: Request):
             stats["blocklist_memberships"] = list(list_on.keys()) if list_on else []
             stats["reverse_dns"] = stats.get("reverse")
 
+            # Filter out unhashable types (dicts, lists) for Jinja2 template engine compatibility
+            clean_stats = {}
+            for k, v in stats.items():
+                if isinstance(v, (int, str, float, type(None), bool)):
+                    clean_stats[k] = v
+                elif k == "blocklist_memberships" and isinstance(v, list):
+                    # Keep list of strings (blocklist names)
+                    clean_stats[k] = v
+
             templates = get_templates()
             return templates.TemplateResponse(
+                request,
                 "dashboard/ip.html",
                 {
-                    "request": request,
                     "dashboard_path": dashboard_path,
-                    "stats": stats,
+                    "stats": clean_stats,
                     "ip_address": ip_address,
                 },
             )

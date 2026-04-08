@@ -39,6 +39,7 @@
 - [Demo](#demo)
 - [What is Krawl?](#what-is-krawl)
 - [Krawl Dashboard](#krawl-dashboard)
+- [Deployment Modes](#deployment-modes)
 - [Quickstart](#quickstart)
   - [Docker Run](#docker-run)
   - [Docker Compose](#docker-compose)
@@ -46,11 +47,12 @@
   - [Uvicorn (Python)](#uvicorn-python)
 - [Configuration](#configuration)
   - [config.yaml](#configuration-via-configyaml)
-  - [Environment Variables](#configuration-via-enviromental-variables)
+  - [Environment Variables](#configuration-via-environmental-variables)
 - [Ban Malicious IPs](#use-krawl-to-ban-malicious-ips)
 - [IP Reputation](#ip-reputation)
 - [Forward Server Header](#forward-server-header)
 - [Additional Documentation](#additional-documentation)
+- [Deception using AI](#ai-generated-deception-pages)
 - [Contributing](#contributing)
 
 ## Demo
@@ -79,6 +81,7 @@ It features:
 - **Real-time Dashboard**: Monitor suspicious activity
 - **Customizable Wordlists**: Easy JSON-based configuration
 - **Random Error Injection**: Mimic real server behavior
+- **[AI Generated Deception Pages](docs/ai_generation.md)**: Fake vulnerable HTML template generated on request
 
 You can easily expose Krawl alongside your other services to shield them from web crawlers and malicious users using a reverse proxy. For more details, see the [Reverse Proxy documentation](docs/reverse-proxy.md).
 
@@ -88,7 +91,7 @@ You can easily expose Krawl alongside your other services to shield them from we
 
 Krawl provides a comprehensive dashboard, accessible at a **random secret path** generated at startup or at a **custom path** configured via `KRAWL_DASHBOARD_SECRET_PATH`. This keeps the dashboard hidden from attackers scanning your honeypot.
 
-The dashboard is organized in five tabs:
+The dashboard is organized in six tabs:
 
 - **Overview**: high-level view of attack activity: an interactive map of IP origins, recent suspicious requests, and top IPs, User-Agents, and paths.
 
@@ -106,21 +109,42 @@ Additionally, after authenticating with the dashboard password, two protected ta
 
 - **Tracked IPs**: maintain a watchlist of IP addresses you want to monitor over time.
 - **IP Banlist**: manage IP bans, view detected attackers, and export the banlist in raw or IPTables format.
+- **Deception**: manage AI generated pages, export them or import new ones.
 
 For more details, see the [Dashboard documentation](docs/dashboard.md).
 
+## Deployment Modes
+
+Krawl supports two deployment modes, controlled by the `mode` setting in `config.yaml` or the `KRAWL_MODE` environment variable.
+
+| | Standalone | Scalable |
+|---|---|---|
+| **Database** | SQLite (WAL mode) | PostgreSQL |
+| **Cache** | In-memory Python dict | Redis (multi-tier TTL) |
+| **Replicas** | 1 (single instance) | 1+ (horizontal scaling) |
+| **External deps** | None | PostgreSQL + Redis |
+| **Best for** | Dev, homelabs, <500k requests | Production, HA, >500k requests |
+
+**Standalone** — ideal for development environments or homelabs with low request counts. Zero additional configuration needed, just run Krawl and it works.
+- Single container deployment — no external dependencies
+- Lower RAM and resource usage
+
+**Scalable** — designed for production environments or high-traffic honeypots. The Helm chart defaults to this mode.
+- Faster, more responsive dashboard thanks to Redis multi-tier caching
+- Lower disk I/O with Redis acting as a hot-path cache in front of PostgreSQL
+- Horizontal scaling — increase the number of Krawl replicas behind a load balancer
+
+For detailed configuration, Docker Compose examples, Kubernetes/Helm setup, and step-by-step migration instructions, see the [Deployment Modes documentation](docs/deployment-modes.md).
 
 ## Quickstart
 
 ### Docker Run
 
-Run Krawl with the latest image:
+Run Krawl in standalone mode with the latest image:
 
 ```bash
 docker run -d \
   -p 5000:5000 \
-  -e KRAWL_PORT=5000 \
-  -e KRAWL_DELAY=100 \
   -e KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard" \
   -e KRAWL_DASHBOARD_PASSWORD="my-secret-password" \
   -v krawl-data:/app/data \
@@ -132,7 +156,9 @@ Access the server at `http://localhost:5000`
 
 ### Docker Compose
 
-Create a `docker-compose.yaml` file:
+Create a `docker-compose.yaml` with one of the two deployment modes.
+
+**Standalone** — just Krawl server with Sqlite storage:
 
 ```yaml
 services:
@@ -143,13 +169,9 @@ services:
       - "5000:5000"
     environment:
       - CONFIG_LOCATION=config.yaml
-      - TZ=Europe/Rome
-      # - KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
       # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
     volumes:
       - ./config.yaml:/app/config.yaml:ro
-      # bind mount for firewall exporters
-      - ./exports:/app/exports
       - krawl-data:/app/data
     restart: unless-stopped
 
@@ -157,24 +179,101 @@ volumes:
   krawl-data:
 ```
 
-Run with:
+**Scalable** — with PostgreSQL and Redis:
 
-```bash
-docker-compose up -d
+> [!CAUTION]
+> The example below uses **default passwords** (`krawl`/`krawl`). **Change them before deploying to production.**
+
+```yaml
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: krawl
+      POSTGRES_USER: krawl
+      POSTGRES_PASSWORD: krawl
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U krawl -d krawl"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  krawl:
+    image: ghcr.io/blessedrebus/krawl:latest
+    container_name: krawl-server
+    ports:
+      - "5000:5000"
+    environment:
+      - CONFIG_LOCATION=config.yaml
+      - KRAWL_MODE=scalable
+      - KRAWL_POSTGRES_HOST=postgres
+      - KRAWL_POSTGRES_PORT=5432
+      - KRAWL_POSTGRES_USER=krawl
+      - KRAWL_POSTGRES_PASSWORD=krawl
+      - KRAWL_POSTGRES_DATABASE=krawl
+      - KRAWL_REDIS_HOST=redis
+      - KRAWL_REDIS_PORT=6379
+      # - KRAWL_DASHBOARD_PASSWORD=my-secret-password
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
 ```
 
-Stop with:
-
+To deploy, just run
 ```bash
-docker-compose down
+docker compose up -d
 ```
+
+Production-ready compose files are also available in the [`docker/`](docker/) directory. For **development** (builds from source with hot-reload), use the compose files at the project root.
+
+For more details on both modes, see [Deployment Modes](docs/deployment-modes.md).
 
 ### Kubernetes
-**Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the helm chart](helm/README.md).
+**Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the Helm chart](helm/README.md).
+
+The Helm chart **defaults to scalable mode** with bundled PostgreSQL and Redis:
+
+```bash
+helm install krawl oci://ghcr.io/blessedrebus/krawl-chart --version 2.0.0 \
+  -n krawl-system --create-namespace \
+  --set postgres.password=your-password \
+  --set redis.password=your-redis-password \
+  --set dashboardPassword=your-dashboard-password \
+  --set config.dashboard.secret_path=/my-secret-dashboard
+```
+
+Minimal example values files are provided for both modes:
+- [`values-minimal.yaml`](helm/values-minimal.yaml) — Scalable (default)
+- [`values-standalone.yaml`](helm/values-standalone.yaml) — Standalone
+
+See [Deployment Modes](docs/deployment-modes.md) and [Chart documentation](helm/README.md) for full configuration and migration instructions.
 
 ### Uvicorn (Python)
 
-Run Krawl directly with Python (suggested version 13) and uvicorn for local development or testing:
+Run Krawl directly with Python 3.13+ and uvicorn for local development or testing:
 
 ```bash
 pip install -r requirements.txt
@@ -190,7 +289,7 @@ Krawl uses a **configuration hierarchy** in which **environment variables take p
 ### Configuration via config.yaml
 You can use the [config.yaml](config.yaml) file for advanced configurations, such as Docker Compose or Helm chart deployments.
 
-### Configuration via Enviromental Variables
+### Configuration via Environmental Variables
 
 | Environment Variable | Description | Default |
 |----------------------|-------------|---------|
@@ -208,7 +307,6 @@ You can use the [config.yaml](config.yaml) file for advanced configurations, suc
 | `KRAWL_DASHBOARD_PASSWORD` | Password for protected dashboard panels | Auto-generated |
 | `KRAWL_PROBABILITY_ERROR_CODES` | Error response probability (0-100%) | `0` |
 | `KRAWL_DATABASE_PATH` | Database file location | `data/krawl.db` |
-| `KRAWL_EXPORTS_PATH` | Path where firewalls rule sets are exported | `exports` |
 | `KRAWL_BACKUPS_PATH` | Path where database dump are saved | `backups` |
 | `KRAWL_BACKUPS_CRON` | cron expression to control backup job schedule | `*/30 * * * *` |
 | `KRAWL_BACKUPS_ENABLED` | Boolean to enable db dump job | `true` |
@@ -222,6 +320,24 @@ You can use the [config.yaml](config.yaml) file for advanced configurations, suc
 | `KRAWL_INFINITE_PAGES_FOR_MALICIOUS` | Serve infinite pages to malicious IPs | `true` |
 | `KRAWL_MAX_PAGES_LIMIT` | Maximum page limit for crawlers | `250` |
 | `KRAWL_BAN_DURATION_SECONDS` | Ban duration in seconds for rate-limited IPs | `600` |
+| `KRAWL_AI_ENABLED` | Enable AI-generated deception pages | `false` |
+| `KRAWL_AI_PROVIDER` | AI provider (`"openrouter"` or `"openai"`) | `"openrouter"` |
+| `KRAWL_AI_API_KEY` | API key for AI provider | `None` |
+| `KRAWL_AI_MODEL` | AI model to use for page generation | `"nvidia/nemotron-3-super-120b-a12b:free"` |
+| `KRAWL_AI_TIMEOUT` | Request timeout in seconds for AI API calls | `60` |
+| `KRAWL_AI_MAX_DAILY_REQUESTS` | Max number of AI-generated pages per day (0 = unlimited) | `0` |
+| `KRAWL_AI_PROMPT` | Custom prompt template for AI page generation | Default prompt |
+| **Scalable mode** | | |
+| `KRAWL_MODE` | Deployment mode (`standalone` or `scalable`) | `standalone` |
+| `KRAWL_POSTGRES_HOST` | PostgreSQL hostname | `localhost` |
+| `KRAWL_POSTGRES_PORT` | PostgreSQL port | `5432` |
+| `KRAWL_POSTGRES_USER` | PostgreSQL username | `krawl` |
+| `KRAWL_POSTGRES_PASSWORD` | PostgreSQL password | `krawl` |
+| `KRAWL_POSTGRES_DATABASE` | PostgreSQL database name | `krawl` |
+| `KRAWL_REDIS_HOST` | Redis hostname | `localhost` |
+| `KRAWL_REDIS_PORT` | Redis port | `6379` |
+| `KRAWL_REDIS_DB` | Redis database number | `0` |
+| `KRAWL_REDIS_PASSWORD` | Redis password | None |
 
 For example
 
@@ -242,11 +358,12 @@ export KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
 export KRAWL_DASHBOARD_PASSWORD="my-secret-password"
 ```
 
-Example of a Docker run with env variables:
+Example of a Docker run with env variables (standalone mode):
 
 ```bash
 docker run -d \
   -p 5000:5000 \
+  -e KRAWL_MODE=standalone \
   -e KRAWL_PORT=5000 \
   -e KRAWL_DELAY=100 \
   -e KRAWL_DASHBOARD_PASSWORD="my-secret-password" \
@@ -256,19 +373,21 @@ docker run -d \
 ```
 
 ## Use Krawl to Ban Malicious IPs
-Krawl uses a reputation-based system to classify attacker IP addresses. Every five minutes, Krawl exports the identified malicious IPs to a `malicious_ips.txt` file.
+Krawl uses a reputation-based system to classify attacker IP addresses and provides two ways to export IP lists for firewall integration.
 
-This file can either be mounted from the Docker container into another system or downloaded directly via `curl`:
+The `/api/export-ips` endpoint queries the database directly and supports filtering by IP category (`attacker`, `bad_crawler`, `regular_user`, `good_crawler`) and output format (`raw`, `iptables`, `nftables`):
 
 ```bash
-curl https://your-krawl-instance/<DASHBOARD-PATH>/api/download/malicious_ips.txt
+curl "https://your-krawl-instance/<DASHBOARD-PATH>/api/export-ips?categories=attacker&fwtype=raw"
 ```
 
-This file enables automatic blocking of malicious traffic across various platforms. You can use it to update firewall rules on:
-* [OPNsense and pfSense](https://www.allthingstech.ch/using-opnsense-and-ip-blocklists-to-block-malicious-traffic)
+This enables automatic blocking of malicious traffic across various platforms:
+* [OPNsense and pfSense](https://ipv64.net/v64_blocklist_integration_guide)
 * [RouterOS](https://rentry.co/krawl-routeros)
 * [IPtables](plugins/iptables/README.md) and [Nftables](plugins/nftables/README.md)
 * [Fail2Ban](plugins/fail2ban/README.md)
+
+For full API parameters, examples, and adding custom firewall formats, see the [Firewall Exporters documentation](docs/firewall-exporters.md).
 
 ## IP Reputation
 Krawl [uses tasks that analyze recent traffic to build and continuously update an IP reputation](src/tasks/analyze_ips.py) score. It runs periodically and evaluates each active IP address based on multiple behavioral indicators to classify it as an attacker, crawler, or regular user. Thresholds are fully customizable.
@@ -291,6 +410,32 @@ Each signal contributes to a weighted scoring model that assigns a reputation ca
 
 The resulting scores and metrics are stored in the database and used by Krawl to drive dashboards, reputation tracking, and automated mitigation actions such as IP banning or firewall integration.
 
+## AI-Generated Deception Pages
+
+Krawl can automatically generate realistic deception pages using AI models from **OpenRouter** or **OpenAI** APIs. This feature creates unique, plausible honeypot pages on-the-fly to deceive attackers without manual page creation.
+
+**Key Features:**
+- **Dynamic Generation**: Creates unique HTML pages for any request path
+- **Smart Caching**: Caches generated pages to avoid redundant API calls
+- **Daily Rate Limiting**: Control API costs with configurable request limits
+- **Multiple Providers**: Support for OpenRouter (free options) and OpenAI
+- **Graceful Fallback**: Falls back to standard honeypot when disabled or limit reached
+- **Cached Serving**: Previously generated pages served even when AI is disabled
+
+**Quick Setup:**
+
+```yaml
+ai:
+  enabled: true
+  provider: "openrouter"
+  api_key: "your-api-key"
+  model: "nvidia/nemotron-3-super-120b-a12b:free"
+  timeout: 60
+  max_daily_requests: 10
+```
+
+For detailed configuration and usage, see the [AI Generation documentation](docs/ai_generation.md).
+
 ## Forward server header
 If Krawl is deployed behind a proxy such as NGINX the **server header** should be forwarded using the following configuration in your proxy:
 
@@ -305,13 +450,17 @@ location / {
 
 | Topic | Description |
 |-------|-------------|
-| [API](docs/api.md) | External APIs used by Krawl for IP data, reputation, and geolocation |
+| [AI Generation](docs/ai_generation.md) | Configure AI-generated deception pages using OpenRouter or OpenAI |
+| [Deployment Modes](docs/deployment-modes.md) | Standalone (SQLite) vs Scalable (PostgreSQL + Redis) mode, configuration, and data migration |
 | [Honeypot](docs/honeypot.md) | Full overview of honeypot pages: fake logins, directory listings, credential files, SQLi/XSS/XXE/command injection traps, and more |
+| [Dashboard](docs/dashboard.md) | Access and explore the real-time monitoring dashboard |
+| [API](docs/api.md) | External APIs used by Krawl for IP data, reputation, and geolocation |
 | [Reverse Proxy](docs/reverse-proxy.md) | How to deploy Krawl behind NGINX or use decoy subdomains |
 | [Database Backups](docs/backups.md) | Enable and configure the automatic database dump job |
 | [Canary Token](docs/canary-token.md) | Set up external alert triggers via canarytokens.org |
 | [Wordlist](docs/wordlist.md) | Customize fake usernames, passwords, and directory listings |
-| [Dashboard](docs/dashboard.md) | Access and explore the real-time monitoring dashboard |
+| [Architecture](docs/architecture.md) | Technical overview of the codebase, request pipeline, database schema, and background tasks |
+| [Firewall Exporters](docs/firewall-exporters.md) | Export IP banlists in raw, iptables, or nftables format via REST API |
 
 ## Contributing
 

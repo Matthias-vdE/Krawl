@@ -7,23 +7,17 @@
     <a href="https://github.com/BlessedRebuS/Krawl" target="_blank" class="github-logo">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         <span class="github-logo-text">Krawl</span>
+        <span class="krawl-version">v{{ krawl_version }}</span>
     </a>
 
-    {# Banlist export dropdown - Alpine.js #}
-    <div class="download-section">
-        <div class="banlist-dropdown" @click.outside="banlistOpen = false">
-            <button class="banlist-dropdown-btn" @click="banlistOpen = !banlistOpen">
-                Export IPs Banlist ▾
-            </button>
-            <div class="banlist-dropdown-menu" :class="{ 'show': banlistOpen }">
-                <a :href="dashboardPath + '/api/get_banlist?fwtype=raw'" download>
-                    <span class="banlist-icon">📄</span> Raw IPs List
-                </a>
-                <a :href="dashboardPath + '/api/get_banlist?fwtype=iptables'" download>
-                    <span class="banlist-icon">🔥</span> IPTables Rules
-                </a>
-            </div>
-        </div>
+    {# Export IPs button + API Docs icon #}
+    <div class="download-section" style="display: flex; align-items: center; gap: 8px;">
+        <a href="{{ dashboard_path }}/docs" target="_blank" title="API Documentation" style="color: rgba(255,255,255,0.5); display: flex; align-items: center;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="18" height="18" fill="currentColor"><path d="M0 1.75A.75.75 0 0 1 .75 1h4.253c1.227 0 2.317.59 3 1.501A3.743 3.743 0 0 1 11.006 1h4.245a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75h-4.507a2.25 2.25 0 0 0-1.591.659l-.622.621a.75.75 0 0 1-1.06 0l-.622-.621A2.25 2.25 0 0 0 5.258 13H.75a.75.75 0 0 1-.75-.75Zm7.251 10.324.004-5.073-.002-2.253A2.25 2.25 0 0 0 5.003 2.5H1.5v9h3.757a3.75 3.75 0 0 1 1.994.574ZM8.755 4.75l-.004 7.322a3.752 3.752 0 0 1 1.992-.572H14.5v-9h-3.495a2.25 2.25 0 0 0-2.25 2.25Z"/></svg>
+        </a>
+        <button class="banlist-dropdown-btn" @click="exportModal.show = true; exportModal.error = ''">
+            Export IPs Banlist
+        </button>
     </div>
 
     <h1>Krawl Dashboard</h1>
@@ -61,6 +55,7 @@
         </a>
         <a class="tab-button tab-right" :class="{ active: tab === 'tracked-ips' }" x-show="authenticated" x-cloak @click.prevent="switchToTrackedIps()" href="#tracked-ips">Tracked IPs</a>
         <a class="tab-button" :class="{ active: tab === 'banlist' }" x-show="authenticated" x-cloak @click.prevent="switchToBanlist()" href="#banlist">IP Banlist</a>
+        <a class="tab-button" :class="{ active: tab === 'deception' }" x-show="authenticated" x-cloak @click.prevent="switchToDeception()" href="#deception">Deception</a>
         {# Lock icon (not authenticated) #}
         <a class="tab-button tab-lock-btn" :class="{ 'tab-right': !authenticated }" @click.prevent="promptAuth()" x-show="!authenticated" href="#" title="Unlock protected panels">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
@@ -87,7 +82,12 @@
         {# Top IPs + Top User-Agents side by side #}
         <div style="display: flex; gap: 20px; flex-wrap: wrap;">
             <div class="table-container" style="flex: 1; min-width: 300px;">
-                <h2>Top IP Addresses</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Top IP Addresses</h2>
+                    <button class="expand-btn" onclick="openExpandOverlay('Top IP Addresses', 'top-ips', 25)" title="Expand">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5H4.56l2.72 2.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L3.5 4.56v2.69a.75.75 0 0 1-1.5 0v-3.5A1.75 1.75 0 0 1 3.75 2Zm8.5 12h-3.5a.75.75 0 0 1 0-1.5h2.69l-2.72-2.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215l2.72 2.72v-2.69a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14Z"/></svg>
+                    </button>
+                </div>
                 <div class="htmx-container"
                      hx-get="{{ dashboard_path }}/htmx/top-ips?page=1"
                      hx-trigger="load"
@@ -96,7 +96,12 @@
                 </div>
             </div>
             <div class="table-container" style="flex: 1; min-width: 300px;">
-                <h2>Top User-Agents</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Top User-Agents</h2>
+                    <button class="expand-btn" onclick="openExpandOverlay('Top User-Agents', 'top-ua', 25)" title="Expand">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5H4.56l2.72 2.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L3.5 4.56v2.69a.75.75 0 0 1-1.5 0v-3.5A1.75 1.75 0 0 1 3.75 2Zm8.5 12h-3.5a.75.75 0 0 1 0-1.5h2.69l-2.72-2.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215l2.72 2.72v-2.69a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14Z"/></svg>
+                    </button>
+                </div>
                 <div class="htmx-container"
                      hx-get="{{ dashboard_path }}/htmx/top-ua?page=1"
                      hx-trigger="load"
@@ -108,7 +113,12 @@
 
         {# Top Paths #}
         <div class="table-container">
-            <h2>Top Paths</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>Top Paths</h2>
+                <button class="expand-btn" onclick="openExpandOverlay('Top Paths', 'top-paths', 25)" title="Expand">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3.75 2h3.5a.75.75 0 0 1 0 1.5H4.56l2.72 2.72a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L3.5 4.56v2.69a.75.75 0 0 1-1.5 0v-3.5A1.75 1.75 0 0 1 3.75 2Zm8.5 12h-3.5a.75.75 0 0 1 0-1.5h2.69l-2.72-2.72a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215l2.72 2.72v-2.69a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14Z"/></svg>
+                </button>
+            </div>
             <div class="htmx-container"
                  hx-get="{{ dashboard_path }}/htmx/top-paths?page=1"
                  hx-trigger="load"
@@ -116,10 +126,60 @@
                 <div class="htmx-indicator">Loading...</div>
             </div>
         </div>
+
+        {# Generated Deception Templates - HTMX loaded #}
+        <div class="table-container">
+            <h2>Generated Deception Templates</h2>
+            <div class="htmx-container"
+                 hx-get="{{ dashboard_path }}/htmx/generated-pages/readonly?page=1"
+                 hx-trigger="load"
+                 hx-swap="innerHTML">
+                <div class="htmx-indicator">Loading...</div>
+            </div>
+        </div>
     </div>
 
-    {# ==================== ATTACKS TAB ==================== #}
-    <div x-show="tab === 'attacks'" x-cloak>
+    {# ==================== ATTACKS TAB (lazy-rendered on navigation) ==================== #}
+    <template x-if="tab === 'attacks'">
+    <div>
+
+        {# Attack Trends line chart with period navigation and totals sidebar #}
+        <div class="table-container alert-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <h2 style="margin: 0;">Attack Trends <span style="color: #8b949e; font-size: 0.7em; font-weight: 400;">(click legend to filter table)</span></h2>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="display: flex; gap: 4px;" id="trends-span-selector">
+                        <button class="map-limit-btn" data-days="1" onclick="setTrendsSpan(1, this)">1D</button>
+                        <button class="map-limit-btn active" data-days="7" onclick="setTrendsSpan(7, this)">7D</button>
+                        <button class="map-limit-btn" data-days="30" onclick="setTrendsSpan(30, this)">30D</button>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <button id="trends-prev" onclick="shiftTrendsPeriod(-1)" class="pagination-btn" style="padding: 4px 10px; font-size: 0.85em;">&#8592;</button>
+                        <span id="trends-period-label" style="color: #c9d1d9; font-size: 0.85em; min-width: 160px; text-align: center;">Last 30 days</span>
+                        <button id="trends-next" onclick="shiftTrendsPeriod(1)" class="pagination-btn" style="padding: 4px 10px; font-size: 0.85em;" disabled>&#8594;</button>
+                    </div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 16px;">
+                <div class="chart-wrapper" style="height: 300px; flex: 1; min-width: 0;">
+                    <canvas id="attack-trends-chart"></canvas>
+                </div>
+                <div id="trends-totals" style="min-width: 180px; max-width: 220px; display: flex; flex-direction: column; gap: 6px; padding-top: 4px; overflow-y: auto; max-height: 300px;">
+                    <span style="color: #8b949e; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;">Totals (period)</span>
+                </div>
+            </div>
+        </div>
+
+        {# Attack Types table #}
+        <div class="table-container alert-section">
+            <h2>Detected Attack Types</h2>
+            <div id="attacks-htmx-container" class="htmx-container"
+                 hx-get="{{ dashboard_path }}/htmx/attacks?page=1"
+                 hx-trigger="revealed"
+                 hx-swap="innerHTML">
+                <div class="htmx-indicator">Loading...</div>
+            </div>
+        </div>
 
         {# Attackers table - HTMX loaded #}
         <div class="table-container alert-section">
@@ -153,37 +213,8 @@
                 <div class="htmx-indicator">Loading...</div>
             </div>
         </div>
-
-        {# Attack Types table #}
-        <div class="table-container alert-section">
-            <h2>Detected Attack Types</h2>
-            <div class="htmx-container"
-                 hx-get="{{ dashboard_path }}/htmx/attacks?page=1"
-                 hx-trigger="revealed"
-                 hx-swap="innerHTML">
-                <div class="htmx-indicator">Loading...</div>
-            </div>
-        </div>
-
-        {# Charts + Patterns side by side #}
-        <div class="charts-container">
-            <div class="table-container chart-section">
-                <h2>Most Recurring Attack Types</h2>
-                <div class="chart-wrapper">
-                    <canvas id="attack-types-chart"></canvas>
-                </div>
-            </div>
-            <div class="table-container chart-section">
-                <h2>Most Recurring Attack Patterns</h2>
-                <div class="htmx-container"
-                     hx-get="{{ dashboard_path }}/htmx/patterns?page=1"
-                     hx-trigger="revealed"
-                     hx-swap="innerHTML">
-                    <div class="htmx-indicator">Loading...</div>
-                </div>
-            </div>
-        </div>
     </div>
+    </template>
 
     {# ==================== IP INSIGHT TAB ==================== #}
     <div x-show="tab === 'ip-insight'" x-cloak>
@@ -208,11 +239,25 @@
         <div id="banlist-htmx-container"></div>
     </div>
 
+    {# ==================== DECEPTION TAB (protected, Generated templates) ==================== #}
+    <div x-show="tab === 'deception'" x-cloak>
+        <div id="deception-htmx-container"></div>
+    </div>
+
+    {# Export IPs modal - Alpine.js #}
+    {% include "dashboard/partials/export_modal.html" %}
+
     {# Raw request modal - Alpine.js #}
     {% include "dashboard/partials/raw_request_modal.html" %}
 
     {# Auth modal - Alpine.js #}
     {% include "dashboard/partials/auth_modal.html" %}
+
+    {# Upload page modal - Alpine.js #}
+    {% include "dashboard/partials/upload_page_modal.html" %}
+
+    {# Expand overlay for Top X tables #}
+    {% include "dashboard/partials/expand_overlay.html" %}
 
 </div>
 {% endblock %}

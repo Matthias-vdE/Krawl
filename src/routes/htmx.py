@@ -5,12 +5,15 @@ HTMX fragment endpoints.
 Server-rendered HTML partials for table pagination, sorting, IP details, and search.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Request, Response, Query
 from fastapi.responses import HTMLResponse
 
 from dependencies import get_db, get_templates
 from routes.api import verify_auth
-from dashboard_cache import get_cached, is_warm
+from config import get_config
+from dashboard_cache import get_cached, is_warm, get_cached_table, set_cached_table
 
 router = APIRouter()
 
@@ -30,16 +33,27 @@ async def htmx_honeypot(
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_honeypot_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
-    )
+    page = max(1, page)
+    cache_key = f"honeypot:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_honeypot_paginated,
+            page=page,
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        set_cached_table(cache_key, result)
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/honeypot_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["honeypots"],
             "pagination": result["pagination"],
@@ -56,33 +70,55 @@ async def htmx_honeypot(
 async def htmx_top_ips(
     request: Request,
     page: int = Query(1),
+    page_size: int = Query(8),
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
+    search: str = Query(""),
+    categories: str = Query(""),
 ):
-    # Serve from cache on default first-page request
+    search = search.strip() or None
+    cat_list = [c.strip() for c in categories.split(",") if c.strip()] or None
+    # Serve from cache on default first-page request (no search/filters, default page_size)
     cached = (
         get_cached("top_ips")
-        if (page == 1 and sort_by == "count" and sort_order == "desc" and is_warm())
+        if (
+            get_config().dashboard_cache_warmup
+            and page == 1
+            and page_size == 8
+            and sort_by == "count"
+            and sort_order == "desc"
+            and not search
+            and not cat_list
+            and is_warm()
+        )
         else None
     )
     if cached:
         result = cached
     else:
         db = get_db()
-        result = db.get_top_ips_paginated(
-            page=max(1, page), page_size=8, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_ips_paginated,
+            page=max(1, page),
+            page_size=min(page_size, 100),
+            sort_by=sort_by,
+            sort_order=sort_order,
+            search=search,
+            categories=cat_list,
         )
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/top_ips_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["ips"],
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
+            "search": search or "",
+            "categories": ",".join(cat_list) if cat_list else "",
         },
     )
 
@@ -94,29 +130,129 @@ async def htmx_top_ips(
 async def htmx_top_paths(
     request: Request,
     page: int = Query(1),
+    page_size: int = Query(5),
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
+    search: str = Query(""),
+    honeypot_only: str = Query(""),
 ):
+    search = search.strip() or None
+    is_honeypot = honeypot_only.strip().lower() in ("1", "true", "yes")
     cached = (
         get_cached("top_paths")
-        if (page == 1 and sort_by == "count" and sort_order == "desc" and is_warm())
+        if (
+            get_config().dashboard_cache_warmup
+            and page == 1
+            and page_size == 5
+            and sort_by == "count"
+            and sort_order == "desc"
+            and not search
+            and not is_honeypot
+            and is_warm()
+        )
         else None
     )
     if cached:
         result = cached
     else:
         db = get_db()
-        result = db.get_top_paths_paginated(
-            page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_paths_paginated,
+            page=max(1, page),
+            page_size=min(page_size, 100),
+            sort_by=sort_by,
+            sort_order=sort_order,
+            search=search,
+            honeypot_only=is_honeypot,
         )
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/top_paths_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["paths"],
+            "pagination": result["pagination"],
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+            "search": search or "",
+            "honeypot_only": "1" if is_honeypot else "",
+        },
+    )
+
+
+# ── Generated Deception Templates ────────────────────────────────────
+
+
+@router.get("/htmx/deception")
+async def htmx_deception(request: Request):
+    """Load the deception panel with generated pages management interface."""
+    templates = get_templates()
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/deception_panel.html",
+        {
+            "dashboard_path": _dashboard_path(request),
+        },
+    )
+
+
+@router.get("/htmx/generated-pages")
+async def htmx_generated_pages(
+    request: Request,
+    page: int = Query(1),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+):
+    """Authenticated generated pages endpoint with checkboxes for deletion."""
+    db = get_db()
+    result = await asyncio.to_thread(
+        db.get_generated_pages_paginated,
+        page=max(1, page),
+        page_size=15,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/generated_pages_table.html",
+        {
+            "dashboard_path": _dashboard_path(request),
+            "items": result["generated_pages"],
+            "pagination": result["pagination"],
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        },
+    )
+
+
+@router.get("/htmx/generated-pages/readonly")
+async def htmx_generated_pages_readonly(
+    request: Request,
+    page: int = Query(1),
+    sort_by: str = Query("created_at"),
+    sort_order: str = Query("desc"),
+):
+    """Read-only generated pages endpoint (no authentication required, no checkboxes)."""
+    db = get_db()
+    result = await asyncio.to_thread(
+        db.get_generated_pages_paginated,
+        page=max(1, page),
+        page_size=15,
+        sort_by=sort_by,
+        sort_order=sort_order,
+    )
+
+    templates = get_templates()
+    return templates.TemplateResponse(
+        request,
+        "dashboard/partials/generated_pages_table_readonly.html",
+        {
+            "dashboard_path": _dashboard_path(request),
+            "items": result["generated_pages"],
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
@@ -131,32 +267,49 @@ async def htmx_top_paths(
 async def htmx_top_ua(
     request: Request,
     page: int = Query(1),
+    page_size: int = Query(5),
     sort_by: str = Query("count"),
     sort_order: str = Query("desc"),
+    search: str = Query(""),
 ):
+    search = search.strip() or None
     cached = (
         get_cached("top_ua")
-        if (page == 1 and sort_by == "count" and sort_order == "desc" and is_warm())
+        if (
+            get_config().dashboard_cache_warmup
+            and page == 1
+            and page_size == 5
+            and sort_by == "count"
+            and sort_order == "desc"
+            and not search
+            and is_warm()
+        )
         else None
     )
     if cached:
         result = cached
     else:
         db = get_db()
-        result = db.get_top_user_agents_paginated(
-            page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
+        result = await asyncio.to_thread(
+            db.get_top_user_agents_paginated,
+            page=max(1, page),
+            page_size=min(page_size, 100),
+            sort_by=sort_by,
+            sort_order=sort_order,
+            search=search,
         )
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/top_ua_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["user_agents"],
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
+            "search": search or "",
         },
     )
 
@@ -171,10 +324,21 @@ async def htmx_attackers(
     sort_by: str = Query("total_requests"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_attackers_paginated(
-        page=max(1, page), page_size=25, sort_by=sort_by, sort_order=sort_order
-    )
+    page = max(1, page)
+    cache_key = f"attackers:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_attackers_paginated,
+            page=page,
+            page_size=10,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        set_cached_table(cache_key, result)
 
     # Normalize pagination key (DB returns total_attackers, template expects total)
     pagination = result["pagination"]
@@ -183,9 +347,9 @@ async def htmx_attackers(
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/attackers_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["attackers"],
             "pagination": pagination,
@@ -204,26 +368,34 @@ async def htmx_access_logs_by_ip(
     page: int = Query(1),
     sort_by: str = Query("total_requests"),
     sort_order: str = Query("desc"),
-    ip_filter: str = Query("ip_filter"),
+    ip_filter: str = Query(None),
 ):
-    db = get_db()
-    result = db.get_access_logs_paginated(
-        page=max(1, page),
-        page_size=25,
-        ip_filter=ip_filter,
-        sort_order=sort_order if sort_order in ("asc", "desc") else "desc",
-    )
+    page = max(1, page)
+    cache_key = f"access_logs:{page}:{sort_order}:{ip_filter or ''}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_access_logs_paginated,
+            page=page,
+            page_size=25,
+            ip_filter=ip_filter,
+            sort_order=sort_order if sort_order in ("asc", "desc") else "desc",
+        )
+        set_cached_table(cache_key, result)
 
-    # Normalize pagination key (DB returns total_attackers, template expects total)
+    # Normalize pagination key (DB returns total_logs, template expects total)
     pagination = result["pagination"]
-    if "total_access_logs" in pagination and "total" not in pagination:
-        pagination["total"] = pagination["total_access_logs"]
+    if "total_logs" in pagination and "total" not in pagination:
+        pagination["total"] = pagination["total_logs"]
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/access_by_ip_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["access_logs"],
             "pagination": pagination,
@@ -244,16 +416,27 @@ async def htmx_credentials(
     sort_by: str = Query("timestamp"),
     sort_order: str = Query("desc"),
 ):
-    db = get_db()
-    result = db.get_credentials_paginated(
-        page=max(1, page), page_size=5, sort_by=sort_by, sort_order=sort_order
-    )
+    page = max(1, page)
+    cache_key = f"credentials:{page}:{sort_by}:{sort_order}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_credentials_paginated,
+            page=page,
+            page_size=5,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        set_cached_table(cache_key, result)
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/credentials_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["credentials"],
             "pagination": result["pagination"],
@@ -273,15 +456,25 @@ async def htmx_attacks(
     sort_by: str = Query("timestamp"),
     sort_order: str = Query("desc"),
     ip_filter: str = Query(None),
+    attack_type_filter: str = Query(None),
 ):
-    db = get_db()
-    result = db.get_attack_types_paginated(
-        page=max(1, page),
-        page_size=5,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        ip_filter=ip_filter,
-    )
+    page = max(1, page)
+    cache_key = f"attacks:{page}:{sort_by}:{sort_order}:{ip_filter or ''}:{attack_type_filter or ''}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        result = await asyncio.to_thread(
+            db.get_attack_types_paginated,
+            page=page,
+            page_size=15,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            ip_filter=ip_filter,
+            attack_type_filter=attack_type_filter,
+        )
+        set_cached_table(cache_key, result)
 
     # Transform attack data for template (join attack_types list, map id to log_id)
     items = []
@@ -299,15 +492,16 @@ async def htmx_attacks(
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/attack_types_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": items,
             "pagination": result["pagination"],
             "sort_by": sort_by,
             "sort_order": sort_order,
             "ip_filter": ip_filter or "",
+            "attack_type_filter": attack_type_filter or "",
         },
     )
 
@@ -320,12 +514,18 @@ async def htmx_patterns(
     request: Request,
     page: int = Query(1),
 ):
-    db = get_db()
     page = max(1, page)
     page_size = 10
 
-    # Get all attack type stats and paginate manually
-    result = db.get_attack_types_stats(limit=100)
+    cache_key = f"patterns:{page}"
+    cached = get_cached_table(cache_key)
+    if cached:
+        result = cached
+    else:
+        db = get_db()
+        # Get all attack type stats and paginate manually
+        result = await asyncio.to_thread(db.get_attack_types_stats, limit=100)
+        set_cached_table(cache_key, result)
     all_patterns = [
         {"pattern": item["type"], "count": item["count"]}
         for item in result.get("attack_types", [])
@@ -338,9 +538,9 @@ async def htmx_patterns(
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/patterns_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": items,
             "pagination": {
@@ -359,7 +559,7 @@ async def htmx_patterns(
 @router.get("/htmx/ip-insight/{ip_address:path}")
 async def htmx_ip_insight(ip_address: str, request: Request):
     db = get_db()
-    stats = db.get_ip_stats_by_ip(ip_address)
+    stats = await asyncio.to_thread(db.get_ip_stats_by_ip, ip_address)
 
     if not stats:
         stats = {"ip": ip_address, "total_requests": "N/A"}
@@ -369,15 +569,25 @@ async def htmx_ip_insight(ip_address: str, request: Request):
     stats["blocklist_memberships"] = list(list_on.keys()) if list_on else []
     stats["reverse_dns"] = stats.get("reverse")
 
-    is_tracked = db.is_ip_tracked(ip_address)
+    # Filter out unhashable types (dicts, lists) for Jinja2 template engine compatibility
+    # but keep specific fields needed by the template (category_scores, category_history, blocklist_memberships)
+    _keep_keys = {"blocklist_memberships", "category_scores", "category_history"}
+    clean_stats = {}
+    for k, v in stats.items():
+        if isinstance(v, (int, str, float, type(None), bool)):
+            clean_stats[k] = v
+        elif k in _keep_keys:
+            clean_stats[k] = v
+
+    is_tracked = await asyncio.to_thread(db.is_ip_tracked, ip_address)
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/ip_insight.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
-            "stats": stats,
+            "stats": clean_stats,
             "ip_address": ip_address,
             "is_tracked": is_tracked,
         },
@@ -390,7 +600,7 @@ async def htmx_ip_insight(ip_address: str, request: Request):
 @router.get("/htmx/ip-detail/{ip_address:path}")
 async def htmx_ip_detail(ip_address: str, request: Request):
     db = get_db()
-    stats = db.get_ip_stats_by_ip(ip_address)
+    stats = await asyncio.to_thread(db.get_ip_stats_by_ip, ip_address)
 
     if not stats:
         stats = {"ip": ip_address, "total_requests": "N/A"}
@@ -400,15 +610,25 @@ async def htmx_ip_detail(ip_address: str, request: Request):
     stats["blocklist_memberships"] = list(list_on.keys()) if list_on else []
     stats["reverse_dns"] = stats.get("reverse")
 
-    is_tracked = db.is_ip_tracked(ip_address)
+    # Filter out unhashable types (dicts, lists) for Jinja2 template engine compatibility
+    # but keep specific fields needed by the template (category_scores, category_history, blocklist_memberships)
+    _keep_keys = {"blocklist_memberships", "category_scores", "category_history"}
+    clean_stats = {}
+    for k, v in stats.items():
+        if isinstance(v, (int, str, float, type(None), bool)):
+            clean_stats[k] = v
+        elif k in _keep_keys:
+            clean_stats[k] = v
+
+    is_tracked = await asyncio.to_thread(db.is_ip_tracked, ip_address)
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/ip_detail.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
-            "stats": stats,
+            "stats": clean_stats,
             "is_tracked": is_tracked,
         },
     )
@@ -428,13 +648,15 @@ async def htmx_search(
         return Response(content="", media_type="text/html")
 
     db = get_db()
-    result = db.search_attacks_and_ips(query=q, page=max(1, page), page_size=20)
+    result = await asyncio.to_thread(
+        db.search_attacks_and_ips, query=q, page=max(1, page), page_size=20
+    )
 
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/search_results.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "attacks": result["attacks"],
             "ips": result["ips"],
@@ -460,9 +682,9 @@ async def htmx_banlist(request: Request):
         )
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/banlist_panel.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
         },
     )
@@ -483,12 +705,14 @@ async def htmx_ban_attackers(
         )
 
     db = get_db()
-    result = db.get_attackers_paginated(page=max(1, page), page_size=page_size)
+    result = await asyncio.to_thread(
+        db.get_attackers_paginated, page=max(1, page), page_size=page_size
+    )
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/ban_attackers_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["attackers"],
             "pagination": result["pagination"],
@@ -512,9 +736,9 @@ async def htmx_tracked_ips(request: Request):
         )
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/tracked_ips_panel.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
         },
     )
@@ -532,12 +756,14 @@ async def htmx_tracked_ips_list(
         )
 
     db = get_db()
-    result = db.get_tracked_ips_paginated(page=max(1, page), page_size=page_size)
+    result = await asyncio.to_thread(
+        db.get_tracked_ips_paginated, page=max(1, page), page_size=page_size
+    )
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/tracked_ips_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["tracked_ips"],
             "pagination": result["pagination"],
@@ -557,12 +783,14 @@ async def htmx_ban_overrides(
         )
 
     db = get_db()
-    result = db.get_ban_overrides_paginated(page=max(1, page), page_size=page_size)
+    result = await asyncio.to_thread(
+        db.get_ban_overrides_paginated, page=max(1, page), page_size=page_size
+    )
     templates = get_templates()
     return templates.TemplateResponse(
+        request,
         "dashboard/partials/ban_overrides_table.html",
         {
-            "request": request,
             "dashboard_path": _dashboard_path(request),
             "items": result["overrides"],
             "pagination": result["pagination"],

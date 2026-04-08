@@ -5,16 +5,20 @@ FastAPI application factory for the Krawl honeypot.
 Replaces the old http.server-based server.py.
 """
 
+import gc
 import sys
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import get_config
+from routes.dashboard import KRAWL_VERSION
 from tracker import AccessTracker, set_tracker
 from database import initialize_database
+from dashboard_cache import initialize_cache, flush_all as flush_cache
 from tasks_master import get_tasksmaster
 from logger import initialize_logging, get_app_logger, get_access_logger
 from generators import random_server_header
@@ -23,6 +27,8 @@ from generators import random_server_header
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
+    gc.set_threshold(700, 10, 5)
+
     config = get_config()
 
     # Initialize logging
@@ -31,12 +37,90 @@ async def lifespan(app: FastAPI):
 
     # Initialize database and run pending migrations before accepting traffic
     try:
-        app_logger.info(f"Initializing database at: {config.database_path}")
-        initialize_database(config.database_path)
+        if config.mode == "scalable":
+            app_logger.info(f"Initializing database in scalable mode (PostgreSQL)")
+            initialize_database(
+                database_path=config.database_path,
+                mode="scalable",
+                postgres_config={
+                    "host": config.postgres_host,
+                    "port": config.postgres_port,
+                    "user": config.postgres_user,
+                    "password": config.postgres_password,
+                    "database": config.postgres_database,
+                },
+            )
+        else:
+            app_logger.info(f"Initializing database at: {config.database_path}")
+            initialize_database(config.database_path)
         app_logger.info("Database ready")
     except Exception as e:
+        if config.mode == "scalable":
+            app_logger.error(
+                f"Database initialization failed in scalable mode: {e}. "
+                "Cannot safely continue without PostgreSQL; exiting."
+            )
+            import sys
+
+            sys.exit(1)
+        else:
+            app_logger.warning(
+                f"Database initialization failed: {e}. Continuing with in-memory only."
+            )
+
+    # Initialize cache backend (in-memory dict for standalone, Redis for scalable)
+    try:
+        if config.mode == "scalable":
+            initialize_cache(
+                mode="scalable",
+                redis_config={
+                    "host": config.redis_host,
+                    "port": config.redis_port,
+                    "db": config.redis_db,
+                    "password": config.redis_password,
+                },
+                ttl_config={
+                    "cache_ttl": config.redis_cache_ttl,
+                    "hot_ttl": config.redis_hot_ttl,
+                    "table_ttl": config.redis_table_ttl,
+                },
+            )
+            app_logger.info(
+                f"Cache initialized with Redis at {config.redis_host}:{config.redis_port}"
+            )
+        else:
+            initialize_cache(mode="standalone")
+            app_logger.info("Cache initialized with in-memory backend")
+    except Exception as e:
         app_logger.warning(
-            f"Database initialization failed: {e}. Continuing with in-memory only."
+            f"Redis cache initialization failed: {e}. Falling back to in-memory cache."
+        )
+        initialize_cache(mode="standalone")
+
+    # Flush stale cache from previous run so the pod starts fresh
+    try:
+        flush_cache()
+        app_logger.info("Cache flushed on startup")
+    except Exception as e:
+        app_logger.warning(f"Cache flush on startup failed: {e}")
+
+    # Resolve server IP once (used to exclude self-traffic from stats)
+    config.resolve_server_ip()
+    if config.get_server_ip():
+        app_logger.info(f"Server public IP: {config.get_server_ip()}")
+    else:
+        app_logger.warning("Server public IP could not be determined")
+
+    # Log AI configuration status
+    from generative_ai import is_ai_enabled, get_provider, get_model
+
+    if is_ai_enabled():
+        provider = get_provider()
+        model = get_model()
+        app_logger.info(f"AI generation enabled - Provider: {provider}, Model: {model}")
+    else:
+        app_logger.info(
+            "AI generation disabled - Cached AI pages will still be served if available"
         )
 
     # Initialize tracker
@@ -86,6 +170,7 @@ DASHBOARD AVAILABLE AT
 ============================================================
     """
     app_logger.info(banner)
+    app_logger.info(f"Running in {config.mode} mode")
     app_logger.info(f"Starting deception server on port {config.port}...")
     if config.canary_token_url:
         app_logger.info(
@@ -97,6 +182,9 @@ DASHBOARD AVAILABLE AT
     yield
 
     # Shutdown
+    from generative_ai import close_aiohttp_session
+
+    await close_aiohttp_session()
     app_logger.info("Server shutting down...")
 
 
@@ -177,10 +265,81 @@ def create_app() -> FastAPI:
     application.include_router(api_router, prefix=dashboard_prefix)
     application.include_router(htmx_router, prefix=dashboard_prefix)
 
+    # OpenAPI spec and Swagger UI served under the secret dashboard path
+    _setup_openapi(application, dashboard_prefix)
+
     # Honeypot routes (catch-all must be last)
     application.include_router(honeypot_router)
 
     return application
+
+
+def _setup_openapi(application: FastAPI, dashboard_prefix: str) -> None:
+    """Mount OpenAPI spec and Swagger UI under the secret dashboard path."""
+    from fastapi.openapi.utils import get_openapi
+    from fastapi.responses import HTMLResponse
+
+    openapi_url = f"{dashboard_prefix}/openapi.json"
+
+    # Endpoints that require authentication (cookie-based session)
+    protected_endpoints = {
+        "/api/ban-override",
+        "/api/track-ip",
+        "/api/delete-generated-pages",
+        "/api/download-generated-page",
+        "/api/upload-generated-page",
+    }
+
+    def custom_openapi():
+        if application.openapi_schema:
+            return application.openapi_schema
+        schema = get_openapi(
+            title="Krawl Dashboard API",
+            version=KRAWL_VERSION,
+            description="API endpoints for the Krawl honeypot dashboard.\n\n"
+            "Endpoints marked with a lock icon require authentication. "
+            "Authenticate via `POST /api/auth` to obtain a session cookie.",
+            routes=application.routes,
+        )
+        # Only keep routes under the dashboard prefix
+        filtered = {}
+        for path, methods in schema.get("paths", {}).items():
+            if path.startswith(dashboard_prefix + "/api/"):
+                # Mark protected endpoints
+                relative = path[len(dashboard_prefix) :]
+                if relative in protected_endpoints:
+                    for method_detail in methods.values():
+                        if isinstance(method_detail, dict):
+                            method_detail["security"] = [{"cookieAuth": []}]
+                filtered[path] = methods
+        schema["paths"] = filtered
+        schema.setdefault("components", {})["securitySchemes"] = {
+            "cookieAuth": {
+                "type": "apiKey",
+                "in": "cookie",
+                "name": "krawl_auth",
+                "description": "Session cookie obtained via POST /api/auth",
+            }
+        }
+        application.openapi_schema = schema
+        return schema
+
+    @application.get(openapi_url, include_in_schema=False)
+    async def get_openapi_schema():
+        return JSONResponse(custom_openapi())
+
+    @application.get(f"{dashboard_prefix}/docs", include_in_schema=False)
+    async def swagger_ui():
+        return HTMLResponse(f"""
+<!DOCTYPE html>
+<html><head>
+<title>Krawl API Docs</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+</head><body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>SwaggerUIBundle({{url: "{openapi_url}", dom_id: "#swagger-ui"}})</script>
+</body></html>""")
 
 
 app = create_app()

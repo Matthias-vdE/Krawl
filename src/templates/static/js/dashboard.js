@@ -1,12 +1,109 @@
 // Alpine.js Dashboard Application
 document.addEventListener('alpine:init', () => {
+
+    // Register HTMX-loaded panel components here (not in partials)
+    // so they are available before Alpine processes the DOM.
+    Alpine.data('banManagement', () => ({
+        newBanIp: '',
+        banLoading: false,
+        banMessage: '',
+        banSuccess: false,
+
+        init() {},
+
+        async forceBan() {
+            if (!this.newBanIp) return;
+            this.banLoading = true;
+            this.banMessage = '';
+            try {
+                const resp = await fetch(`${window.__DASHBOARD_PATH__}/api/ban-override`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ ip: this.newBanIp, action: 'ban' }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.banSuccess = true;
+                    this.banMessage = `IP ${this.newBanIp} added to banlist`;
+                    this.newBanIp = '';
+                    this.refreshOverrides();
+                } else {
+                    this.banSuccess = false;
+                    this.banMessage = data.error || 'Failed to ban IP';
+                }
+            } catch {
+                this.banSuccess = false;
+                this.banMessage = 'Request failed';
+            }
+            this.banLoading = false;
+        },
+
+        refreshOverrides() {
+            const container = document.getElementById('overrides-container');
+            if (container && typeof htmx !== 'undefined') {
+                htmx.ajax('GET', `${window.__DASHBOARD_PATH__}/htmx/ban/overrides?page=1`, {
+                    target: '#overrides-container',
+                    swap: 'innerHTML'
+                });
+            }
+        },
+    }));
+
+    Alpine.data('trackManagement', () => ({
+        newTrackIp: '',
+        trackLoading: false,
+        trackMessage: '',
+        trackSuccess: false,
+
+        init() {},
+
+        async trackIp() {
+            if (!this.newTrackIp) return;
+            this.trackLoading = true;
+            this.trackMessage = '';
+            try {
+                const resp = await fetch(`${window.__DASHBOARD_PATH__}/api/track-ip`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ ip: this.newTrackIp, action: 'track' }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.trackSuccess = true;
+                    this.trackMessage = `IP ${this.newTrackIp} is now being tracked`;
+                    this.newTrackIp = '';
+                    this.refreshList();
+                } else {
+                    this.trackSuccess = false;
+                    this.trackMessage = data.error || 'Failed to track IP';
+                }
+            } catch {
+                this.trackSuccess = false;
+                this.trackMessage = 'Request failed';
+            }
+            this.trackLoading = false;
+        },
+
+        refreshList() {
+            const container = document.getElementById('tracked-ips-container');
+            if (container && typeof htmx !== 'undefined') {
+                htmx.ajax('GET', `${window.__DASHBOARD_PATH__}/htmx/tracked-ips/list?page=1`, {
+                    target: '#tracked-ips-container',
+                    swap: 'innerHTML'
+                });
+            }
+        },
+    }));
+
     Alpine.data('dashboardApp', () => ({
         // State
         tab: 'overview',
         dashboardPath: window.__DASHBOARD_PATH__ || '',
 
-        // Banlist dropdown
-        banlistOpen: false,
+        // Export IPs modal
+        exportModal: { show: false, categories: ['attacker'], fwtype: 'raw', error: '', loading: false },
 
         // Raw request modal
         rawModal: { show: false, content: '', logId: null },
@@ -23,6 +120,13 @@ document.addEventListener('alpine:init', () => {
         // Auth state (UI only — actual security enforced server-side via cookie)
         authenticated: false,
         authModal: { show: false, password: '', error: '', loading: false },
+        uploadModal: { show: false, path: '', fileName: '', fileContent: '', error: '', success: '', loading: false, dragging: false },
+
+        // Expand overlay state
+        expandOverlay: { show: false, title: '', endpoint: '', pageSize: 25, search: '', categories: [], honeypotOnly: false },
+
+        // Flag to prevent double-triggering during init
+        _initializingHash: false,
 
         async init() {
             // Check if already authenticated (cookie-based)
@@ -35,51 +139,78 @@ document.addEventListener('alpine:init', () => {
             this.$watch('authenticated', (val) => updateBanActionVisibility(val));
             updateBanActionVisibility(this.authenticated);
 
-            // Handle hash-based tab routing
+            // Set flag to prevent double-triggering during initialization
+            this._initializingHash = true;
+
+            // Handle hash-based tab routing on page load
             const hash = window.location.hash.slice(1);
             if (hash === 'ip-stats' || hash === 'attacks') {
                 this.switchToAttacks();
+            } else if (hash === 'banlist' && this.authenticated) {
+                this.switchToBanlist();
+            } else if (hash === 'tracked-ips' && this.authenticated) {
+                this.switchToTrackedIps();
+            } else if (hash === 'deception' && this.authenticated) {
+                this.switchToDeception();
+            } else if (hash === 'overview' || !hash) {
+                this.switchToOverview();
+            } else {
+                // Default to overview if hash is unrecognized
+                this.switchToOverview();
             }
-            // ip-insight tab is only accessible via lens buttons, not direct hash navigation
 
-            window.addEventListener('hashchange', () => {
-                const h = window.location.hash.slice(1);
-                if (h === 'ip-stats' || h === 'attacks') {
-                    this.switchToAttacks();
-                } else if (h === 'banlist') {
-                    if (this.authenticated) this.switchToBanlist();
-                } else if (h === 'tracked-ips') {
-                    if (this.authenticated) this.switchToTrackedIps();
-                } else if (h !== 'ip-insight') {
-                    if (this.tab !== 'ip-insight') {
-                        this.switchToOverview();
+            // Wait for this tick to complete, then allow hashchange events
+            this.$nextTick(() => {
+                this._initializingHash = false;
+                
+                // Listen for hash changes (after initialization)
+                window.addEventListener('hashchange', () => {
+                    const h = window.location.hash.slice(1);
+                    if (h === 'ip-stats' || h === 'attacks') {
+                        this.switchToAttacks();
+                    } else if (h === 'banlist') {
+                        if (this.authenticated) this.switchToBanlist();
+                    } else if (h === 'tracked-ips') {
+                        if (this.authenticated) this.switchToTrackedIps();
+                    } else if (h === 'deception') {
+                        if (this.authenticated) this.switchToDeception();
+                    } else if (h !== 'ip-insight') {
+                        if (this.tab !== 'ip-insight') {
+                            this.switchToOverview();
+                        }
                     }
-                }
+                });
             });
         },
 
         switchToAttacks() {
+            if (this.tab === 'attacks') return;  // Prevent duplicate loading
             this.tab = 'attacks';
-            window.location.hash = '#ip-stats';
+            window.location.hash = '#attacks';
 
-            // Delay chart initialization to ensure the container is visible
+            // x-if inserts new DOM — HTMX must process it for hx-trigger to work
             this.$nextTick(() => {
                 setTimeout(() => {
-                    if (!this.chartLoaded && typeof loadAttackTypesChart === 'function') {
-                        loadAttackTypesChart();
-                        this.chartLoaded = true;
+                    if (typeof loadAttackTrendsChart === 'function') {
+                        loadAttackTrendsChart();
                     }
+                    // Process all HTMX containers in the attacks tab
+                    document.querySelectorAll('.alert-section .htmx-container[hx-get]').forEach(el => {
+                        htmx.process(el);
+                    });
                 }, 200);
             });
         },
 
         switchToOverview() {
+            if (this.tab === 'overview') return;  // Prevent duplicate loading
             this.tab = 'overview';
             window.location.hash = '#overview';
         },
 
         switchToBanlist() {
             if (!this.authenticated) return;
+            if (this.tab === 'banlist') return;  // Prevent duplicate loading
             this.tab = 'banlist';
             window.location.hash = '#banlist';
             this.$nextTick(() => {
@@ -95,6 +226,7 @@ document.addEventListener('alpine:init', () => {
 
         switchToTrackedIps() {
             if (!this.authenticated) return;
+            if (this.tab === 'tracked-ips') return;  // Prevent duplicate loading
             this.tab = 'tracked-ips';
             window.location.hash = '#tracked-ips';
             this.$nextTick(() => {
@@ -102,6 +234,22 @@ document.addEventListener('alpine:init', () => {
                 if (container && typeof htmx !== 'undefined') {
                     htmx.ajax('GET', `${this.dashboardPath}/htmx/tracked-ips`, {
                         target: '#tracked-ips-htmx-container',
+                        swap: 'innerHTML'
+                    });
+                }
+            });
+        },
+
+        switchToDeception() {
+            if (!this.authenticated) return;
+            if (this.tab === 'deception') return;  // Prevent duplicate loading
+            this.tab = 'deception';
+            window.location.hash = '#deception';
+            this.$nextTick(() => {
+                const container = document.getElementById('deception-htmx-container');
+                if (container && typeof htmx !== 'undefined') {
+                    htmx.ajax('GET', `${this.dashboardPath}/htmx/deception`, {
+                        target: '#deception-htmx-container',
                         swap: 'innerHTML'
                     });
                 }
@@ -116,7 +264,7 @@ document.addEventListener('alpine:init', () => {
                 });
             } catch {}
             this.authenticated = false;
-            if (this.tab === 'banlist' || this.tab === 'tracked-ips') this.switchToOverview();
+            if (this.tab === 'banlist' || this.tab === 'tracked-ips' || this.tab === 'deception') this.switchToOverview();
         },
 
         promptAuth() {
@@ -131,6 +279,46 @@ document.addEventListener('alpine:init', () => {
             this.authModal.password = '';
             this.authModal.error = '';
             this.authModal.loading = false;
+        },
+
+        async submitExport() {
+            if (this.exportModal.categories.length === 0) {
+                this.exportModal.error = 'Select at least one category';
+                return;
+            }
+            this.exportModal.error = '';
+            this.exportModal.loading = true;
+            try {
+                const params = new URLSearchParams({
+                    categories: this.exportModal.categories.join(','),
+                    fwtype: this.exportModal.fwtype,
+                });
+                const resp = await fetch(`${this.dashboardPath}/api/export-ips?${params}`, {
+                    credentials: 'same-origin',
+                });
+                if (!resp.ok) {
+                    const data = await resp.json().catch(() => ({}));
+                    this.exportModal.error = data.error || 'Export failed';
+                    return;
+                }
+                const blob = await resp.blob();
+                const disposition = resp.headers.get('Content-Disposition') || '';
+                const match = disposition.match(/filename="?([^"]+)"?/);
+                const filename = match ? match[1] : 'export.txt';
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                this.exportModal.show = false;
+            } catch (e) {
+                this.exportModal.error = 'Network error';
+            } finally {
+                this.exportModal.loading = false;
+            }
         },
 
         async submitAuth() {
@@ -212,7 +400,7 @@ document.addEventListener('alpine:init', () => {
                     { cache: 'no-store' }
                 );
                 if (resp.status === 404) {
-                    alert('Raw request not available');
+                    krawlModal.error('Raw request not available');
                     return;
                 }
                 const data = await resp.json();
@@ -220,7 +408,7 @@ document.addEventListener('alpine:init', () => {
                 this.rawModal.logId = logId;
                 this.rawModal.show = true;
             } catch (err) {
-                alert('Failed to load raw request');
+                krawlModal.error('Failed to load raw request');
             }
         },
 
@@ -283,6 +471,343 @@ window.openIpInsight = function(ip) {
         data.openIpInsight(ip);
     }
 };
+
+// Deception panel delete functions
+window.reloadGeneratedPagesTable = function() {
+    const dashboardPath = document.querySelector('[x-data="dashboardApp()"]')?.__alpine_data?.dashboardPath || window.__DASHBOARD_PATH__ || '';
+    const htmxContainer = document.querySelector('#deception-htmx-container .htmx-container');
+    if (htmxContainer && typeof htmx !== 'undefined') {
+        const tableUrl = dashboardPath + '/htmx/generated-pages?page=1&sort_by=created_at&sort_order=desc';
+        htmx.ajax('GET', tableUrl, {
+            target: htmxContainer,
+            swap: 'innerHTML'
+        });
+    }
+};
+
+window.deletePagesBefore = async function() {
+    const dashboardPath = document.querySelector('[x-data="dashboardApp()"]')?.__alpine_data?.dashboardPath || window.__DASHBOARD_PATH__ || '';
+    const dateInput = document.getElementById('delete-before-date');
+    if (!dateInput || !dateInput.value) {
+        krawlModal.error('Please select a date');
+        return;
+    }
+    const confirmed = await krawlModal.confirm('Delete all pages created before ' + dateInput.value + '? This cannot be undone.');
+    if (!confirmed) return;
+    const url = dashboardPath + '/api/delete-generated-pages?before_date=' + encodeURIComponent(dateInput.value);
+
+    fetch(url, { method: 'POST' })
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('deception-htmx-container').innerHTML = html;
+            // Reload table after a brief delay to ensure new DOM is ready
+            setTimeout(window.reloadGeneratedPagesTable, 100);
+        })
+        .catch(error => {
+            console.error('Delete error:', error);
+            krawlModal.error('Error deleting pages');
+        });
+};
+
+window.deleteSelectedPages = async function() {
+    const dashboardPath = document.querySelector('[x-data="dashboardApp()"]')?.__alpine_data?.dashboardPath || window.__DASHBOARD_PATH__ || '';
+    const container = document.getElementById('deception-htmx-container');
+
+    if (!container) {
+        krawlModal.error('Table not loaded. Please wait a moment.');
+        return;
+    }
+
+    // Find all checked checkboxes in the container
+    const checkboxes = container.querySelectorAll('input[name="page-checkbox"]:checked');
+
+    if (checkboxes.length === 0) {
+        krawlModal.error('Please select at least one page to delete');
+        return;
+    }
+
+    // Collect IDs and filter out empty ones
+    const ids = [];
+    checkboxes.forEach(cb => {
+        const val = cb.value || cb.getAttribute('value');
+        if (val && val.trim()) {
+            ids.push(val.trim());
+        }
+    });
+
+    if (ids.length === 0) {
+        console.error('No valid checkbox values found. Checkbox values:',
+            Array.from(checkboxes).map(cb => ({ value: cb.value, attr: cb.getAttribute('value') })));
+        krawlModal.error('No valid page IDs found. Please try again.');
+        return;
+    }
+
+    const idsString = ids.join(',');
+
+    const confirmed = await krawlModal.confirm('Delete ' + ids.length + ' selected page(s)? This cannot be undone.');
+    if (!confirmed) return;
+
+    const url = dashboardPath + '/api/delete-generated-pages?ids=' + encodeURIComponent(idsString);
+
+    fetch(url, { method: 'POST' })
+        .then(response => response.text())
+        .then(html => {
+            container.innerHTML = html;
+            // Reload table after a brief delay to ensure new DOM is ready
+            setTimeout(window.reloadGeneratedPagesTable, 100);
+        })
+        .catch(error => {
+            console.error('Delete error:', error);
+            krawlModal.error('Error deleting pages');
+        });
+};
+
+window.deleteAllPages = async function() {
+    const dashboardPath = document.querySelector('[x-data="dashboardApp()"]')?.__alpine_data?.dashboardPath || window.__DASHBOARD_PATH__ || '';
+    const confirmed = await krawlModal.confirm('Delete ALL generated pages? This cannot be undone.');
+    if (!confirmed) return;
+    const url = dashboardPath + '/api/delete-generated-pages?delete_all=true';
+
+    fetch(url, { method: 'POST' })
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('deception-htmx-container').innerHTML = html;
+            // Reload table after a brief delay to ensure new DOM is ready
+            setTimeout(window.reloadGeneratedPagesTable, 100);
+        })
+        .catch(error => {
+            console.error('Delete error:', error);
+            krawlModal.error('Error deleting pages');
+        });
+};
+
+window.selectAllPages = function() {
+    const selectAllCheckbox = document.getElementById('select-all-pages');
+    if (!selectAllCheckbox) return;
+    document.querySelectorAll('#deception-htmx-container input[name="page-checkbox"]').forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+};
+
+window.downloadGeneratedPage = function(path) {
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    window.open(dashboardPath + '/api/download-generated-page?path=' + encodeURIComponent(path), '_blank');
+};
+
+window.deleteGeneratedPage = async function(path) {
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    const confirmed = await krawlModal.confirm('Delete this generated page? This cannot be undone.');
+    if (!confirmed) return;
+    fetch(dashboardPath + '/api/delete-generated-pages?ids=' + encodeURIComponent(path), { method: 'POST' })
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('deception-htmx-container').innerHTML = html;
+            setTimeout(window.reloadGeneratedPagesTable, 100);
+        })
+        .catch(error => {
+            console.error('Delete error:', error);
+            krawlModal.error('Error deleting page');
+        });
+};
+
+// Toggle danger state on deception delete buttons based on conditions
+window.toggleDeceptionBtnState = function() {
+    const dateInput = document.getElementById('delete-before-date');
+    const beforeBtn = document.getElementById('btn-delete-before');
+    if (beforeBtn) {
+        beforeBtn.classList.toggle('deception-action-btn-danger', !!(dateInput && dateInput.value));
+    }
+
+    const checked = document.querySelectorAll('#deception-htmx-container input[name="page-checkbox"]:checked');
+    const hasSelection = checked.length > 0;
+
+    const selectedBtn = document.getElementById('btn-delete-selected');
+    if (selectedBtn) {
+        selectedBtn.classList.toggle('deception-action-btn-danger', hasSelection);
+    }
+
+    const downloadBtn = document.getElementById('btn-download-selected');
+    if (downloadBtn) {
+        downloadBtn.classList.toggle('deception-action-btn-active', hasSelection);
+    }
+};
+
+// Listen for checkbox changes inside HTMX-loaded deception table
+document.addEventListener('change', function(e) {
+    if (e.target.name === 'page-checkbox' || e.target.id === 'select-all-pages') {
+        toggleDeceptionBtnState();
+    }
+});
+
+window.downloadSelectedPages = function() {
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    const container = document.getElementById('deception-htmx-container');
+    if (!container) return;
+
+    const checkboxes = container.querySelectorAll('input[name="page-checkbox"]:checked');
+    if (checkboxes.length === 0) {
+        krawlModal.error('Please select at least one page to download');
+        return;
+    }
+
+    // Download each selected page
+    checkboxes.forEach(cb => {
+        const path = cb.value;
+        window.open(dashboardPath + '/api/download-generated-page?path=' + encodeURIComponent(path), '_blank');
+    });
+};
+
+// Upload page modal handlers
+const _allowedUploadExts = ['.html', '.htm', '.xml', '.json', '.txt', '.css', '.js'];
+
+function _getAlpineData() {
+    const el = document.querySelector('[x-data="dashboardApp()"]');
+    return el && el._x_dataStack ? el._x_dataStack[0] : null;
+}
+
+window.openUploadModal = function() {
+    const app = _getAlpineData();
+    if (!app) return;
+    Object.assign(app.uploadModal, { show: true, path: '', fileName: '', fileContent: '', error: '', success: '', loading: false, dragging: false });
+};
+
+window.handleUploadFile = function(event) {
+    const file = event.target.files[0];
+    if (file) _processUploadFile(file);
+};
+
+window.handleUploadDrop = function(event) {
+    const file = event.dataTransfer.files[0];
+    if (file) _processUploadFile(file);
+};
+
+function _processUploadFile(file) {
+    const app = _getAlpineData();
+    if (!app) return;
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (!_allowedUploadExts.includes(ext)) {
+        app.uploadModal.error = 'Unsupported file type. Use: ' + _allowedUploadExts.join(', ');
+        app.uploadModal.fileName = '';
+        app.uploadModal.fileContent = '';
+        return;
+    }
+    app.uploadModal.error = '';
+    app.uploadModal.fileName = file.name;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        app.uploadModal.fileContent = e.target.result;
+        // Auto-fill path from filename if empty
+        if (!app.uploadModal.path) {
+            app.uploadModal.path = file.name;
+        }
+    };
+    reader.readAsText(file);
+}
+
+window.submitUploadPage = async function() {
+    const app = _getAlpineData();
+    if (!app) return;
+    const modal = app.uploadModal;
+    modal.error = '';
+    modal.success = '';
+
+    let path = modal.path.trim();
+    if (!path) { modal.error = 'Please enter a path'; return; }
+    if (!modal.fileContent) { modal.error = 'Please select a file'; return; }
+
+    // Ensure path starts with /
+    if (!path.startsWith('/')) path = '/' + path;
+
+    modal.loading = true;
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+
+    try {
+        const resp = await fetch(dashboardPath + '/api/upload-generated-page', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ path: path, content: modal.fileContent }),
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            modal.success = 'Page uploaded to ' + path;
+            modal.error = '';
+            // Reset form after short delay
+            setTimeout(() => {
+                modal.show = false;
+                if (typeof window.reloadGeneratedPagesTable === 'function') {
+                    window.reloadGeneratedPagesTable();
+                }
+            }, 1200);
+        } else {
+            modal.error = data.error || 'Upload failed';
+        }
+    } catch (err) {
+        modal.error = 'Request failed: ' + err.message;
+    }
+    modal.loading = false;
+};
+
+// === Expand overlay for Top X tables ===
+window.openExpandOverlay = function(title, endpoint, pageSize) {
+    const app = _getAlpineData();
+    if (!app) return;
+    Object.assign(app.expandOverlay, {
+        show: true, title: title, endpoint: endpoint,
+        pageSize: pageSize || 25, search: '',
+        categories: [], honeypotOnly: false,
+    });
+    _reloadExpandOverlay();
+};
+
+window.triggerExpandSearch = function() {
+    _reloadExpandOverlay();
+};
+
+window.toggleExpandCategory = function(cat) {
+    const app = _getAlpineData();
+    if (!app) return;
+    const cats = app.expandOverlay.categories;
+    const idx = cats.indexOf(cat);
+    if (idx >= 0) cats.splice(idx, 1);
+    else cats.push(cat);
+    _reloadExpandOverlay();
+};
+
+window.toggleExpandHoneypot = function() {
+    const app = _getAlpineData();
+    if (!app) return;
+    app.expandOverlay.honeypotOnly = !app.expandOverlay.honeypotOnly;
+    _reloadExpandOverlay();
+};
+
+function _reloadExpandOverlay() {
+    const app = _getAlpineData();
+    if (!app) return;
+    const ov = app.expandOverlay;
+    const dashboardPath = window.__DASHBOARD_PATH__ || '';
+    const container = document.getElementById('expand-overlay-table');
+    if (!container) return;
+
+    const params = new URLSearchParams({
+        page: '1',
+        page_size: String(ov.pageSize),
+        search: ov.search || '',
+    });
+
+    // Contextual filters
+    if (ov.endpoint === 'top-ips' && ov.categories.length > 0) {
+        params.set('categories', ov.categories.join(','));
+    }
+    if (ov.endpoint === 'top-paths' && ov.honeypotOnly) {
+        params.set('honeypot_only', '1');
+    }
+
+    const url = `${dashboardPath}/htmx/${ov.endpoint}?${params}`;
+    container.innerHTML = '<div style="text-align: center; padding: 40px; color: #8b949e;">Loading...</div>';
+    htmx.ajax('GET', url, { target: container, swap: 'innerHTML' });
+}
 
 // Escape HTML to prevent XSS when inserting into innerHTML
 function escapeHtml(str) {
@@ -428,7 +953,7 @@ function formatTimestamp(isoTimestamp) {
     if (!isoTimestamp) return 'N/A';
     try {
         const date = new Date(isoTimestamp);
-        return date.toLocaleString('en-US', {
+        return date.toLocaleString('en-GB', {
             year: 'numeric', month: '2-digit', day: '2-digit',
             hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
         });
