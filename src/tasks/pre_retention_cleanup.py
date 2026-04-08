@@ -37,22 +37,58 @@ app_logger = get_app_logger()
 # ----------------------
 
 HONEYPOT_SUBSTRINGS = [
-    "/backup", "/admin", "/config", "/private", "/database", "phpmyadmin",
+    "/backup",
+    "/admin",
+    "/config",
+    "/private",
+    "/database",
+    "phpmyadmin",
 ]
 
 HONEYPOT_PATHS = {
-    "/admin", "/admin/", "/backup", "/backup/", "/config", "/config/",
-    "/private", "/private/", "/database", "/database/",
-    "/credentials.txt", "/passwords.txt", "/admin_notes.txt",
-    "/api_keys.json", "/.env", "/wp-admin", "/wp-admin/",
-    "/phpmyadmin", "/phpMyAdmin/",
+    "/admin",
+    "/admin/",
+    "/backup",
+    "/backup/",
+    "/config",
+    "/config/",
+    "/private",
+    "/private/",
+    "/database",
+    "/database/",
+    "/credentials.txt",
+    "/passwords.txt",
+    "/admin_notes.txt",
+    "/api_keys.json",
+    "/.env",
+    "/wp-admin",
+    "/wp-admin/",
+    "/phpmyadmin",
+    "/phpMyAdmin/",
 }
 
 FALLBACK_SUSPICIOUS_PATTERNS = [
-    "bot", "crawler", "spider", "scraper", "curl", "wget",
-    "python-requests", "scanner", "nikto", "sqlmap", "nmap",
-    "masscan", "nessus", "acunetix", "burp", "zap", "w3af",
-    "metasploit", "nuclei", "gobuster", "dirbuster",
+    "bot",
+    "crawler",
+    "spider",
+    "scraper",
+    "curl",
+    "wget",
+    "python-requests",
+    "scanner",
+    "nikto",
+    "sqlmap",
+    "nmap",
+    "masscan",
+    "nessus",
+    "acunetix",
+    "burp",
+    "zap",
+    "w3af",
+    "metasploit",
+    "nuclei",
+    "gobuster",
+    "dirbuster",
 ]
 
 FALLBACK_ATTACK_PATTERNS = {
@@ -71,8 +107,9 @@ def _is_honeypot_path(path: str) -> bool:
     return any(hp in lower for hp in HONEYPOT_SUBSTRINGS)
 
 
-def _is_still_suspicious(path: str, user_agent: str,
-                         attack_patterns: dict, suspicious_patterns: list) -> bool:
+def _is_still_suspicious(
+    path: str, user_agent: str, attack_patterns: dict, suspicious_patterns: list
+) -> bool:
     """Re-run the same checks the tracker uses at request time."""
     # Honeypot path check
     if _is_honeypot_path(path):
@@ -137,8 +174,10 @@ def main():
             ids_to_unflag = []
             for log in old_logs:
                 if _is_still_suspicious(
-                    log.path, log.user_agent or "",
-                    attack_patterns, suspicious_patterns,
+                    log.path,
+                    log.user_agent or "",
+                    attack_patterns,
+                    suspicious_patterns,
                 ):
                     kept += 1
                 else:
