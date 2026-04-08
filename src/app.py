@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import get_config
+from routes.dashboard import KRAWL_VERSION
 from tracker import AccessTracker, set_tracker
 from database import initialize_database
 from dashboard_cache import initialize_cache, flush_all as flush_cache
@@ -294,7 +295,7 @@ def _setup_openapi(application: FastAPI, dashboard_prefix: str) -> None:
             return application.openapi_schema
         schema = get_openapi(
             title="Krawl Dashboard API",
-            version="2.0.0",
+            version=KRAWL_VERSION,
             description="API endpoints for the Krawl honeypot dashboard.\n\n"
             "Endpoints marked with a lock icon require authentication. "
             "Authenticate via `POST /api/auth` to obtain a session cookie.",

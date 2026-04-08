@@ -5,6 +5,10 @@ Dashboard page route.
 Renders the main dashboard page with server-side data for initial load.
 """
 
+import os
+from pathlib import Path
+
+import yaml
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from logger import get_app_logger
@@ -14,6 +18,22 @@ from config import get_config
 from dashboard_cache import get_cached, is_warm
 
 router = APIRouter()
+
+
+def _get_krawl_version() -> str:
+    """Read version from Chart.yaml, with KRAWL_VERSION env var as override."""
+    env = os.getenv("KRAWL_VERSION")
+    if env:
+        return env
+    chart_path = Path(__file__).resolve().parent.parent.parent / "Chart.yaml"
+    if chart_path.exists():
+        with open(chart_path) as f:
+            chart = yaml.safe_load(f)
+        return str(chart.get("appVersion", "dev"))
+    return "dev"
+
+
+KRAWL_VERSION = _get_krawl_version()
 
 
 @router.get("")
@@ -53,6 +73,7 @@ async def dashboard_page(request: Request):
             "dashboard_path": dashboard_path,
             "stats": clean_stats,
             "suspicious_activities": suspicious,
+            "krawl_version": KRAWL_VERSION,
         },
     )
 

@@ -36,6 +36,15 @@ body {
     font-size: 14px;
     font-weight: 600;
     text-decoration: none;
+    line-height: 1;
+}
+.krawl-version {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 400;
+    margin-left: 4px;
+    align-self: center;
+    line-height: 1;
 }
 h1 {
     color: #58a6ff;
