@@ -64,9 +64,6 @@ backups:
   cron: "*/30 * * * *"
   enabled: false
 
-exports:
-  path: "exports"
-
 logging:
   level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
