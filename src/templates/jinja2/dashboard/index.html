@@ -9,8 +9,11 @@
         <span class="github-logo-text">Krawl</span>
     </a>
 
-    {# Export IPs button - opens modal #}
+    {# Export IPs button + API Docs link #}
     <div class="download-section">
+        <a class="banlist-dropdown-btn" href="{{ dashboard_path }}/docs" target="_blank" title="OpenAPI Documentation" style="text-decoration: none; text-align: center;">
+            API Docs
+        </a>
         <button class="banlist-dropdown-btn" @click="openExportModal()">
             Export IPs Banlist
         </button>
