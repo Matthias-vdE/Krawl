@@ -11,7 +11,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import get_config
@@ -252,6 +252,14 @@ def create_app() -> FastAPI:
         StaticFiles(directory=static_dir),
         name="dashboard-static",
     )
+
+    # Get the favicon from the data directory. Serve that one if it exists. If not, serve the default one under /templates/static.
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+    @application.get("/favicon.ico", include_in_schema=False)
+    async def favicon():
+        if os.path.exists(os.path.join(data_dir, "favicon.ico")):
+            return FileResponse(os.path.join(data_dir, "favicon.ico"))
+        return FileResponse(os.path.join(static_dir, "favicon.ico"))
 
     # Import and include routers
     from routes.honeypot import router as honeypot_router
